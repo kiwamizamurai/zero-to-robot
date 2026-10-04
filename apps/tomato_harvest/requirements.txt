@@ -1,0 +1,2 @@
+-r ../so101_twin/requirements.txt
+opencv-python-headless

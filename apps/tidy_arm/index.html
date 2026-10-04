@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>お片付けロボットアーム</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+/* Layout: 机の横から見た作業台を大きく、その下に「ロボットの考え」6ステップ、右に操作 */
+:root {
+  --bg: #f3f1ec;
+  --panel: #fffdf8;
+  --ink: #26292b;
+  --muted: #6b6f70;
+  --line: #dcd8cf;
+  --wall: #eae6dd;
+  --table: #b88a5a;
+  --table-dark: #94693d;
+  --metal: #3d4a55;
+  --metal-light: #7e8f9c;
+  --joint: #f2b233;
+  --accent: #1f6fb2;
+  --accent-soft: #e1ecf6;
+  --ghost: #1f6fb2;
+  --font-display: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Noto Sans JP", sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b; --wall: #1b1f23;
+    --table: #8a653f; --table-dark: #6b4b2c; --metal: #b9c6d0; --metal-light: #71818d; --joint: #f2b233;
+    --accent: #6fb0ea; --accent-soft: #1d2e3e; --ghost: #6fb0ea; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b; --wall: #1b1f23;
+  --table: #8a653f; --table-dark: #6b4b2c; --metal: #b9c6d0; --metal-light: #71818d; --joint: #f2b233;
+  --accent: #6fb0ea; --accent-soft: #1d2e3e; --ghost: #6fb0ea; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 22px 16px 44px; display: grid; gap: 18px; }
+header h1 { font-family: var(--font-display); font-weight: 800; font-size: 28px; margin: 0; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 64ch; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
+@media (max-width: 860px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.stage { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; position: relative; }
+#sim { display: block; width: 100%; aspect-ratio: 4 / 3; max-width: 100%; touch-action: none; }
+.say { position: absolute; left: 12px; right: 12px; top: 10px; display: flex; gap: 10px; align-items: flex-start; pointer-events: none; }
+.say p { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; font-size: 14px; line-height: 1.55; box-shadow: 0 2px 8px rgba(0,0,0,.06); max-width: 60ch; }
+.say p b { color: var(--accent); }
+.panel { display: grid; gap: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--bg); border-radius: 10px; padding: 3px; gap: 3px; }
+.tabs button { border: 0; background: transparent; padding: 7px; border-radius: 8px; font-weight: 500; }
+.tabs button[aria-selected="true"] { background: var(--panel); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+button { font: inherit; font-size: 14px; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.big { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 700; font-size: 15px; padding: 11px; }
+.stack { display: grid; gap: 8px; }
+.note { font-size: 13px; color: var(--muted); line-height: 1.6; margin: 0; }
+.slider { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; align-items: center; }
+.slider .v { font-family: var(--font-mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+.slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+.row { display: flex; gap: 10px; align-items: center; font-size: 14px; }
+.row input { accent-color: var(--accent); }
+.flow h2, .real h2 { font-family: var(--font-display); font-weight: 800; font-size: 19px; margin: 0 0 10px; }
+.steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; list-style: none; padding: 0; margin: 0; }
+@media (max-width: 900px) { .steps { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.steps li { background: var(--panel); border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 10px 12px; display: grid; gap: 2px; align-content: start; transition: border-color .2s, background .2s; }
+.steps li .n { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.steps li strong { font-family: var(--font-display); font-size: 16px; }
+.steps li span { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+.steps li.active { border-color: var(--accent); background: var(--accent-soft); }
+.steps li.active .n { color: var(--accent); }
+.real { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 860px) { .real { grid-template-columns: minmax(0, 1fr); } }
+.real section { min-width: 0; }
+.real ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 500; }
+td.dir { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; color: var(--muted); }
+@media (max-width: 600px) { select, button { min-height: 44px; } .wrap { padding-left: 12px; padding-right: 12px; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <a href="../index.html" style="display:inline-block;padding:11px 0;font-size:13px;color:var(--muted);text-decoration:none">← サンプルアプリ一覧へ</a>
+    <h1>お片付けロボットアーム</h1>
+    <p>机の上のブロックを箱に片付けるロボットです。ロボットが何を考えて動いているかを、下の 6 ステップで順番に見られます。</p>
+  </header>
+
+  <div class="main">
+    <div class="stage">
+      <canvas id="sim" aria-label="ロボットアームがブロックを箱に片付ける様子"></canvas>
+      <div class="say"><p id="say">「ぜんぶ片付ける」を押すか、ブロックをクリックしてください。</p></div>
+    </div>
+
+    <aside class="panel">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tAuto" aria-selected="true">おまかせ</button>
+        <button role="tab" id="tHand" aria-selected="false">自分で動かす</button>
+      </div>
+
+      <div id="pAuto" class="stack">
+        <button class="big" id="bAll">ぜんぶ片付ける</button>
+        <p class="note">ブロックを 1 つクリックすると、それだけ片付けます。</p>
+        <button id="bReset">最初に戻す</button>
+        <label class="row"><input type="checkbox" id="slow"> ゆっくり再生</label>
+      </div>
+
+      <div id="pHand" class="stack" hidden>
+        <p class="note">モーターは <b>肩</b> と <b>ひじ</b> の 2 つだけ。角度を変えてブロックをつかんでみてください。</p>
+        <div class="slider"><label for="s1">肩の角度</label><span class="v" id="s1v"></span><input type="range" id="s1" min="0" max="180" step="1"></div>
+        <div class="slider"><label for="s2">ひじの曲げ</label><span class="v" id="s2v"></span><input type="range" id="s2" min="0" max="170" step="1"></div>
+        <button id="bGrip">つかむ</button>
+        <p class="note">難しいですよね。今度は画面上で<b>手をドラッグ</b>してみてください。手を置きたい場所を指すだけで、肩とひじの角度が自動で決まり、上のスライダーも勝手に動きます。この「手の位置 → 関節の角度」の計算が<b>逆運動学</b>です。</p>
+        <button id="bReset2">最初に戻す</button>
+      </div>
+    </aside>
+  </div>
+
+  <div class="flow">
+    <h2>ロボットの頭の中</h2>
+    <ol class="steps" id="steps">
+      <li><span class="n">1</span><strong>見つける</strong><span>ブロックがどこにあるかを知る</span></li>
+      <li><span class="n">2</span><strong>角度を計算</strong><span>手をそこに置くには、肩とひじを何度にすればいいか</span></li>
+      <li><span class="n">3</span><strong>動かす</strong><span>ゆっくり動き出して、ゆっくり止まる</span></li>
+      <li><span class="n">4</span><strong>つかむ</strong><span>真下に降りて指を閉じる</span></li>
+      <li><span class="n">5</span><strong>運ぶ</strong><span>持ち上げて箱の上へ</span></li>
+      <li><span class="n">6</span><strong>はなす</strong><span>指を開いて、次のブロックへ</span></li>
+    </ol>
+  </div>
+
+  <div class="real">
+    <section>
+      <h2>本物のロボットでは</h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>ステップ</th><th>本物ではこうする</th><th>このリポジトリ</th></tr></thead>
+          <tbody>
+            <tr><td>1 見つける</td><td>カメラで撮って、画像からブロックの位置を求める。ここでは位置を最初から知っていることにしている</td><td class="dir">07 (予定)</td></tr>
+            <tr><td>2 角度を計算</td><td>逆運動学。ライブラリなら mink や ikpy に「手をここへ」と渡すと角度が返ってくる</td><td class="dir">01_kinematics</td></tr>
+            <tr><td>3 動かす</td><td>急に動くと揺れて危ないので、なめらかな動きの計画を立てる</td><td class="dir">05_planning</td></tr>
+            <tr><td>3 動かす</td><td>モーターが重さに負けずに、計画どおりの角度を保つように力を調整する</td><td class="dir">02, 03</td></tr>
+            <tr><td>4〜6</td><td>グリッパー(指)の開け閉め。上の 1〜3 の組み合わせで動く</td><td class="dir">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section>
+      <h2>同じしくみで動いているもの</h2>
+      <ul>
+        <li>工場で部品を箱詰めするロボットアーム</li>
+        <li>通販の倉庫で商品を棚から取り出すピッキングロボット</li>
+        <li>ハンバーガーを焼く、コーヒーを淹れる調理ロボット</li>
+        <li>手術支援ロボット(医師の手の動きを、アームの関節角度に変換する)</li>
+      </ul>
+      <p class="note" style="margin-top:10px">どれも中身は「見つける → 角度を計算 → なめらかに動かす → つかむ」の繰り返しです。関節の数が 6 つ、7 つと増えても、考え方はこの 2 関節のアームと変わりません。</p>
+    </section>
+  </div>
+</div>
+
+<script>
+(() => {
+  // 単位は cm。机の上面が y = 0、肩の関節が (0, SH)
+  const L1 = 32, L2 = 30, SH = 12, FINGER = 9, BLOCK = 6;
+  const BOX = { x0: 44, x1: 62, h: 12, t: 1.2 };
+  const SAFE_Y = 32;
+  const COLORS = ['#e0533d', '#2f8fdb', '#3aa55d', '#e9a92b'];
+  const NAMES = ['赤', '青', '緑', '黄'];
+  const START_X = [14, 22, 30, 38];
+  const $ = id => document.getElementById(id);
+  const deg = r => r * 180 / Math.PI, rad = d => d * Math.PI / 180;
+
+  // ---------- 運動学(01_kinematics) ----------
+  function fk(q) {
+    const e = [L1 * Math.cos(q[0]), SH + L1 * Math.sin(q[0])];
+    return { e, w: [e[0] + L2 * Math.cos(q[0] + q[1]), e[1] + L2 * Math.sin(q[0] + q[1])] };
+  }
+  function clampHand(p) {
+    let [x, y] = p;
+    y = Math.max(y, FINGER + 0.5);
+    const dx = x, dy = y - SH, r = Math.hypot(dx, dy), rmin = Math.abs(L1 - L2) + 4, rmax = L1 + L2 - 0.3;
+    if (r > rmax) { x = dx * rmax / r; y = SH + dy * rmax / r; }
+    if (r < rmin) { const k = rmin / Math.max(r, 1e-6); x = dx * k; y = SH + dy * k; }
+    return [x, y];
+  }
+  function ik(p) {
+    const [x, y] = clampHand(p), dx = x, dy = y - SH;
+    const D = Math.max(-1, Math.min(1, (dx * dx + dy * dy - L1 * L1 - L2 * L2) / (2 * L1 * L2)));
+    const q2 = -Math.acos(D); // ひじを上に出す解
+    const q1 = Math.atan2(dy, dx) - Math.atan2(L2 * Math.sin(q2), L1 + L2 * Math.cos(q2));
+    return [q1, q2];
+  }
+  // 5次多項式: ゆっくり動き出してゆっくり止まる(05_planning)
+  const smooth = t => { t = Math.min(1, Math.max(0, t)); return t * t * t * (10 - 15 * t + 6 * t * t); };
+
+  // ---------- 状態 ----------
+  const HOME = ik([22, 38]);
+  let q, grip, held, blocks, queue, seg, autoAll, stepIdx, ghost, focus, mode = 'auto', dragging = false, dragTarget = null;
+  function reset() {
+    q = HOME.slice(); grip = 0; held = -1; queue = []; seg = null; autoAll = false; stepIdx = -1; ghost = null; focus = -1;
+    blocks = START_X.map((x, i) => ({ x, y: 0, vy: 0, color: COLORS[i], name: NAMES[i] }));
+    say('「ぜんぶ片付ける」を押すか、ブロックをクリックしてください。');
+    setStep(-1); syncSliders(); updateButtons();
+  }
+  const inBox = b => b.x > BOX.x0 && b.x < BOX.x1;
+  const busy = () => seg !== null || queue.length > 0;
+  const gap = () => 11 - (11 - BLOCK - 0.2) * grip;
+
+  function say(html) { $('say').innerHTML = html; }
+  function setStep(i) {
+    stepIdx = i;
+    [...$('steps').children].forEach((li, k) => li.classList.toggle('active', k === i));
+  }
+  function updateButtons() {
+    const left = blocks.some((b, i) => !inBox(b) && i !== held);
+    $('bAll').disabled = busy() || !left;
+    $('bAll').textContent = left ? 'ぜんぶ片付ける' : '片付け完了';
+    $('bGrip').textContent = grip > 0.5 ? 'はなす' : 'つかむ';
+  }
+  const angleText = qq => `肩 <b>${Math.round(deg(qq[0]))}°</b>、ひじを <b>${Math.round(-deg(qq[1]))}°</b> 曲げる`;
+
+  // ---------- 片付けの手順を組み立てる ----------
+  function planPick(i) {
+    const b = blocks[i];
+    const above = [b.x, BLOCK + 3 + 18], grasp = [b.x, BLOCK + 3];
+    const qAbove = ik(above);
+    const n = blocks.filter((o, k) => k !== i && inBox(o)).length;
+    const boxX = (BOX.x0 + BOX.x1) / 2;
+    const placeTop = n * BLOCK + BLOCK;
+    const overBox = [boxX, Math.max(SAFE_Y, placeTop + 3 + 14)], place = [boxX, placeTop + 3 + 0.5];
+    const qOver = ik(overBox);
+    queue.push(
+      { k: 'wait', T: 0.9, step: 0, focus: i, msg: `<b>${b.name}のブロック</b>を見つけた。位置は 横 ${b.x.toFixed(0)} cm、高さ 0 cm。` },
+      { k: 'wait', T: 1.6, step: 1, ghost: qAbove, msg: `その真上に手を置くには… ${angleText(qAbove)}。(点線が計算した姿勢)` },
+      { k: 'joint', goal: qAbove, T: 1.4, step: 2, ghost: qAbove, msg: `肩とひじのモーターを同時に回して、計算した姿勢へ。動き出しと止まる瞬間はゆっくり。` },
+      { k: 'line', to: grasp, T: 0.8, step: 3, msg: `まっすぐ下へ。真下に降りるだけでも、肩とひじの角度は毎瞬計算し直している。` },
+      { k: 'grip', close: true, T: 0.45, step: 3, msg: `指を閉じてつかむ。` },
+      { k: 'line', to: [b.x, SAFE_Y], T: 0.7, step: 4, msg: `ぶつからない高さまで持ち上げる。` },
+      { k: 'joint', goal: qOver, T: 1.5, step: 4, ghost: qOver, msg: `箱の上へ運ぶ。着く先は ${angleText(qOver)}。` },
+      { k: 'line', to: place, T: 0.8, step: 4, msg: `箱の中へそっと降ろす。` },
+      { k: 'grip', close: false, T: 0.4, step: 5, msg: `指を開いてはなす。` },
+      { k: 'line', to: [boxX, SAFE_Y + 4], T: 0.6, step: 5, msg: `手を上げて、次へ。` },
+      { k: 'call', fn: () => {
+        const next = blocks.findIndex(o => !inBox(o));
+        if (autoAll && next >= 0) planPick(next);
+        else queue.push({ k: 'joint', goal: HOME, T: 1.2, step: -1, msg: next < 0 ? 'ぜんぶ箱に入りました。お片付け完了。' : '片付けました。ほかのブロックもクリックしてみてください。' },
+                        { k: 'call', fn: () => { autoAll = false; setStep(-1); } });
+      } },
+    );
+  }
+
+  function startSeg(s) {
+    seg = s; s.t = 0;
+    if (s.k === 'joint') s.from = q.slice();
+    if (s.k === 'line') s.from = fk(q).w;
+    if (s.k === 'grip') s.g0 = grip;
+    if (s.msg) say(s.msg);
+    if (s.step !== undefined) setStep(s.step);
+    ghost = s.ghost || null;
+    focus = s.focus !== undefined ? s.focus : -1;
+    updateButtons();
+  }
+  function runSeg(dt) {
+    if (!seg) {
+      if (!queue.length) return;
+      const s = queue.shift();
+      if (s.k === 'call') { s.fn(); updateButtons(); return; }
+      startSeg(s);
+    }
+    const s = seg; s.t += dt;
+    const u = smooth(s.t / s.T);
+    if (s.k === 'joint') q = [s.from[0] + (s.goal[0] - s.from[0]) * u, s.from[1] + (s.goal[1] - s.from[1]) * u];
+    if (s.k === 'line') q = ik([s.from[0] + (s.to[0] - s.from[0]) * u, s.from[1] + (s.to[1] - s.from[1]) * u]);
+    if (s.k === 'grip') grip = s.g0 + ((s.close ? 1 : 0) - s.g0) * u;
+    if (s.t >= s.T) {
+      if (s.k === 'grip') { if (s.close) tryGrab(); else release(); }
+      seg = null; ghost = null; focus = -1; updateButtons();
+    }
+  }
+
+  // ---------- つかむ・はなす・落ちる ----------
+  function tryGrab() {
+    const w = fk(q).w;
+    const i = blocks.findIndex(b => Math.abs(b.x - w[0]) < 3.2 && b.y + BLOCK / 2 > w[1] - FINGER - 1 && b.y + BLOCK / 2 < w[1] - 1);
+    if (i >= 0) { held = i; blocks[i].vy = 0; }
+    return i;
+  }
+  function release() { held = -1; }
+  function supportBelow(i) {
+    const b = blocks[i]; let top = 0;
+    blocks.forEach((o, k) => {
+      if (k === i || k === held) return;
+      if (Math.abs(o.x - b.x) < BLOCK - 0.5 && o.y + BLOCK <= b.y + 0.01) top = Math.max(top, o.y + BLOCK);
+    });
+    for (const wx of [BOX.x0, BOX.x1]) if (Math.abs(b.x - wx) < BLOCK / 2 + BOX.t / 2 && BOX.h <= b.y + 0.01) top = Math.max(top, BOX.h);
+    return top;
+  }
+  function physics(dt) {
+    const w = fk(q).w;
+    blocks.forEach((b, i) => {
+      if (i === held) { b.x = w[0]; b.y = w[1] - 3 - BLOCK; b.vy = 0; return; }
+      const s = supportBelow(i);
+      if (b.y > s + 0.001) { b.vy -= 981 * dt; b.y += b.vy * dt; if (b.y <= s) { b.y = s; b.vy = 0; } }
+      else { b.y = s; b.vy = 0; }
+    });
+  }
+
+  // ---------- 描画 ----------
+  const cv = $('sim'), ctx = cv.getContext('2d');
+  let C = {}, V = { s: 1, ox: 0, oy: 0, w: 0, h: 0, dpr: 1 };
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of ['bg', 'panel', 'ink', 'muted', 'line', 'wall', 'table', 'table-dark', 'metal', 'metal-light', 'joint', 'accent', 'ghost'])
+      C[k] = cs.getPropertyValue('--' + k).trim();
+  }
+  function resize() {
+    const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    // 見せたい範囲: x -18〜72 cm, y -10〜80 cm
+    const s = Math.min(r.width / 92, r.height / 90);
+    V = { s, ox: r.width / 2 - 27 * s, oy: r.height - 10 * s, w: r.width, h: r.height, dpr };
+  }
+  const P = p => [V.ox + p[0] * V.s, V.oy - p[1] * V.s];
+  const W = (x, y) => [(x - V.ox) / V.s, (V.oy - y) / V.s];
+
+  function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+  function drawLink(a, b, width, color) {
+    ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke(); ctx.restore();
+  }
+  function drawArm(qq, isGhost) {
+    const s = V.s, { e, w } = fk(qq);
+    const S0 = P([0, SH]), E = P(e), Wp = P(w);
+    if (isGhost) {
+      ctx.save(); ctx.setLineDash([7, 6]); ctx.globalAlpha = 0.85;
+      drawLink(S0, E, 2, C.ghost); drawLink(E, Wp, 2, C.ghost);
+      ctx.beginPath(); ctx.moveTo(Wp[0], Wp[1]); ctx.lineTo(Wp[0], Wp[1] + FINGER * s); ctx.strokeStyle = C.ghost; ctx.stroke();
+      ctx.restore();
+      return;
+    }
+    drawLink(S0, E, 4.2 * s, C.metal); drawLink(S0, E, 1.6 * s, C['metal-light']);
+    drawLink(E, Wp, 3.4 * s, C.metal); drawLink(E, Wp, 1.2 * s, C['metal-light']);
+    // グリッパー: 手首から真下に向く
+    const g = gap() / 2 * s;
+    ctx.fillStyle = C.metal;
+    rrect(Wp[0] - g - 1.2 * s, Wp[1] - 1.2 * s, 2 * g + 2.4 * s, 2.4 * s, 0.6 * s); ctx.fill();
+    for (const sx of [-1, 1]) { rrect(Wp[0] + sx * g - 0.6 * s - (sx > 0 ? 0.6 * s : 0), Wp[1], 1.2 * s, FINGER * s, 0.4 * s); ctx.fill(); }
+    // 関節(モーター)
+    for (const p of [S0, E]) {
+      ctx.fillStyle = C.joint; ctx.beginPath(); ctx.arc(p[0], p[1], 2.6 * s, 0, 7); ctx.fill();
+      ctx.fillStyle = C.metal; ctx.beginPath(); ctx.arc(p[0], p[1], 1.0 * s, 0, 7); ctx.fill();
+    }
+    ctx.fillStyle = C.metal; ctx.beginPath(); ctx.arc(Wp[0], Wp[1], 1.5 * s, 0, 7); ctx.fill();
+  }
+  function angleArc(center, from, to, r, label, lp) {
+    ctx.save(); ctx.strokeStyle = C.joint; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(center[0], center[1], r, -from, -to, to > from); ctx.stroke();
+    ctx.font = `500 ${Math.max(11, V.s * 2.3)}px "Noto Sans JP", sans-serif`;
+    ctx.fillStyle = C.ink;
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = C.panel; ctx.globalAlpha = 0.85; ctx.fillRect(lp[0] - 3, lp[1] - V.s * 2.2, tw + 6, V.s * 3); ctx.globalAlpha = 1;
+    ctx.fillStyle = C.ink; ctx.fillText(label, lp[0], lp[1]);
+    ctx.restore();
+  }
+  function draw(time) {
+    const { w, h, dpr, s } = V;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = C.wall; ctx.fillRect(0, 0, w, h);
+    // 机
+    const T0 = P([-100, 0]);
+    ctx.fillStyle = C.table; ctx.fillRect(0, T0[1], w, 2.5 * s);
+    ctx.fillStyle = C['table-dark']; ctx.fillRect(0, T0[1] + 2.5 * s, w, h);
+    // 目盛り(10 cm ごと)
+    ctx.fillStyle = C.panel; ctx.globalAlpha = 0.7; ctx.font = `500 ${Math.max(10, s * 1.8)}px "IBM Plex Mono", monospace`;
+    for (let x = -10; x <= 60; x += 10) { const p = P([x, 0]); ctx.fillRect(p[0] - 0.5, p[1], 1, 1.4 * s); ctx.fillText(`${x}`, p[0] + 2, p[1] + 5 * s); }
+    ctx.globalAlpha = 1;
+    // 箱
+    const bx0 = P([BOX.x0 - BOX.t / 2, BOX.h]), bx1 = P([BOX.x1 + BOX.t / 2, 0]);
+    ctx.fillStyle = C.line; ctx.globalAlpha = 0.5; ctx.fillRect(bx0[0], bx0[1], bx1[0] - bx0[0], bx1[1] - bx0[1]); ctx.globalAlpha = 1;
+    // 手が届く範囲
+    const Sp = P([0, SH]);
+    ctx.save(); ctx.strokeStyle = C.muted; ctx.globalAlpha = 0.35; ctx.setLineDash([2, 6]); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(Sp[0], Sp[1], (L1 + L2) * s, Math.PI * 1.02, Math.PI * 2.02); ctx.stroke(); ctx.restore();
+    ctx.fillStyle = C.muted; ctx.font = `${Math.max(11, s * 2)}px "Noto Sans JP", sans-serif`;
+    const lab = P([(L1 + L2) * 0.72 + 1, SH + (L1 + L2) * 0.72]); ctx.fillText('手が届く範囲', lab[0], lab[1]);
+    // 台座
+    const b0 = P([-7, SH]), b1 = P([7, 0]);
+    ctx.fillStyle = C.metal; rrect(b0[0], b0[1], b1[0] - b0[0], b1[1] - b0[1], 1.2 * s); ctx.fill();
+    // ブロック(つかんでいないもの)
+    blocks.forEach((b, i) => {
+      const p = P([b.x - BLOCK / 2, b.y + BLOCK]);
+      ctx.fillStyle = b.color; rrect(p[0], p[1], BLOCK * s, BLOCK * s, 0.8 * s); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.25)'; rrect(p[0] + 0.8 * s, p[1] + 0.8 * s, BLOCK * s - 1.6 * s, 1.2 * s, 0.4 * s); ctx.fill();
+      if (i === focus) {
+        const pulse = 1 + 0.15 * Math.sin(time / 120);
+        ctx.save(); ctx.strokeStyle = C.accent; ctx.lineWidth = 3;
+        const c = P([b.x, b.y + BLOCK / 2]);
+        ctx.beginPath(); ctx.arc(c[0], c[1], BLOCK * 0.95 * s * pulse, 0, 7); ctx.stroke(); ctx.restore();
+      }
+    });
+    // 箱の壁(ブロックより手前)
+    ctx.fillStyle = C.metal;
+    for (const wx of [BOX.x0, BOX.x1]) { const p = P([wx - BOX.t / 2, BOX.h]); ctx.fillRect(p[0], p[1], BOX.t * s, BOX.h * s); }
+    const bl = P([(BOX.x0 + BOX.x1) / 2 + 3, -8.5]);
+    ctx.fillStyle = C.panel; ctx.textAlign = 'center'; ctx.fillText('箱', bl[0], bl[1]); ctx.textAlign = 'left';
+    // 計算した姿勢(点線)
+    if (ghost) drawArm(ghost, true);
+    // 本体
+    drawArm(q, false);
+    // 関節の角度
+    const { e } = fk(q);
+    angleArc(Sp, 0, q[0], 6 * s, `肩 ${Math.round(deg(q[0]))}°`, [Sp[0] + 3.5 * s, Sp[1] + 5.5 * s]);
+    const E = P(e);
+    angleArc(E, q[0], q[0] + q[1], 4.5 * s, `ひじ ${Math.round(-deg(q[1]))}°`, [E[0] + 4 * s, E[1] - 3 * s]);
+    // 自分で動かすモード: 手をドラッグできる印
+    if (mode === 'hand' && !busy()) {
+      const Wp = P(fk(q).w);
+      ctx.save(); ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.arc(Wp[0], Wp[1] + FINGER * s / 2, 7 * s, 0, 7); ctx.stroke(); ctx.restore();
+    }
+  }
+
+  // ---------- 入力 ----------
+  function pickAt(pt) {
+    return blocks.findIndex(b => !inBox(b) && Math.abs(pt[0] - b.x) < BLOCK / 2 + 1 && pt[1] > b.y - 1 && pt[1] < b.y + BLOCK + 1);
+  }
+  cv.addEventListener('pointerdown', e => {
+    const r = cv.getBoundingClientRect(), pt = W(e.clientX - r.left, e.clientY - r.top);
+    if (mode === 'auto') {
+      if (busy()) return;
+      const i = pickAt(pt);
+      if (i >= 0) { autoAll = false; planPick(i); updateButtons(); }
+      return;
+    }
+    if (busy()) return;
+    dragging = true; cv.setPointerCapture(e.pointerId);
+    dragTarget = [pt[0], pt[1] + FINGER / 2];
+    e.preventDefault();
+  });
+  cv.addEventListener('pointermove', e => {
+    const r = cv.getBoundingClientRect(), pt = W(e.clientX - r.left, e.clientY - r.top);
+    if (dragging) dragTarget = [pt[0], pt[1] + FINGER / 2];
+    else if (mode === 'auto') cv.style.cursor = pickAt(pt) >= 0 && !busy() ? 'pointer' : 'default';
+    else cv.style.cursor = 'grab';
+  });
+  const endDrag = () => { dragging = false; dragTarget = null; };
+  cv.addEventListener('pointerup', endDrag);
+  cv.addEventListener('pointercancel', endDrag);
+
+  function syncSliders() {
+    $('s1').value = Math.round(deg(q[0])); $('s2').value = Math.round(-deg(q[1]));
+    $('s1v').textContent = `${$('s1').value}°`; $('s2v').textContent = `${$('s2').value}°`;
+  }
+  const fromSliders = () => { q = [rad(+$('s1').value), -rad(+$('s2').value)]; syncSliders(); };
+  $('s1').addEventListener('input', fromSliders);
+  $('s2').addEventListener('input', fromSliders);
+  $('bGrip').onclick = () => {
+    if (busy()) return;
+    if (grip > 0.5) { queue.push({ k: 'grip', close: false, T: 0.3 }); say('指を開いた。'); }
+    else {
+      queue.push({ k: 'grip', close: true, T: 0.3 }, { k: 'call', fn: () => say(held >= 0 ? `<b>${blocks[held].name}のブロック</b>をつかんだ。箱まで運んで「はなす」を押してみよう。` : '空振り。手の指の間にブロックが入るように、真上から降ろしてみよう。') });
+    }
+  };
+
+  function setMode(m) {
+    mode = m;
+    $('tAuto').setAttribute('aria-selected', m === 'auto'); $('tHand').setAttribute('aria-selected', m === 'hand');
+    $('pAuto').hidden = m !== 'auto'; $('pHand').hidden = m !== 'hand';
+    queue = []; seg = null; ghost = null; focus = -1; autoAll = false; setStep(-1);
+    say(m === 'auto' ? '「ぜんぶ片付ける」を押すか、ブロックをクリックしてください。' : 'スライダーで肩とひじを動かすか、画面上で手をドラッグして、ブロックをつかんで箱に入れてみよう。');
+    syncSliders(); updateButtons();
+  }
+  $('tAuto').onclick = () => setMode('auto');
+  $('tHand').onclick = () => setMode('hand');
+  $('bAll').onclick = () => {
+    if (busy()) return;
+    const i = blocks.findIndex(b => !inBox(b));
+    if (i >= 0) { autoAll = true; planPick(i); updateButtons(); }
+  };
+  $('bReset').onclick = reset;
+  $('bReset2').onclick = () => { reset(); setMode('hand'); };
+
+  // ---------- ループ ----------
+  reset(); readColors(); resize();
+  new ResizeObserver(resize).observe(cv);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+  new MutationObserver(readColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const k = $('slow').checked && mode === 'auto' ? 0.4 : 1;
+    runSeg(dt * k);
+    if (dragging && dragTarget && !busy()) {
+      const cur = fk(q).w, tgt = clampHand(dragTarget), a = Math.min(1, dt * 12);
+      q = ik([cur[0] + (tgt[0] - cur[0]) * a, cur[1] + (tgt[1] - cur[1]) * a]);
+      syncSliders();
+    } else if (mode === 'hand' && seg) syncSliders();
+    physics(dt * k);
+    draw(now);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  // 開いた直後から動きが見えるように、赤いブロックを 1 つ片付けてみせる
+  setTimeout(() => { if (!busy() && mode === 'auto') { planPick(0); updateButtons(); } }, 700);
+})();
+</script>
+</body>
+</html>

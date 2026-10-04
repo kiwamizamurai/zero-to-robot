@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>猫じゃらしロボット</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+/* Layout: 床を真上から見た大きな画面(右上に横から見た図)、右に操作と観測値、下に「頭の中」6 枚と、学習の様子のグラフ 2 つ */
+:root {
+  --bg: #f3f1ec;
+  --panel: #fffdf8;
+  --ink: #26292b;
+  --muted: #6b6f70;
+  --line: #dcd8cf;
+  --rug: #e9dcc6;
+  --rug-line: #dccbae;
+  --cat: #4d4f55;
+  --cat-belly: #f1ece4;
+  --robot: #3c4a57;
+  --rod: #2b2f33;
+  --toy: #e0507a;
+  --toy2: #f2b233;
+  --box: #b48a5a;
+  --cam: #1f6fb2;
+  --accent: #1f6fb2;
+  --accent-soft: #e1ecf6;
+  --warn: #d9542f;
+  --ok: #3aa55d;
+  --m1: #e07b2f;
+  --m2: #8a5cc4;
+  --m3: #1f6fb2;
+  --font-display: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Noto Sans JP", sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b;
+    --rug: #2c2a26; --rug-line: #38352f; --cat: #c9ccd2; --cat-belly: #5a5d63; --robot: #9fb0c0; --rod: #d9dde1;
+    --toy: #f07ba0; --toy2: #f2c35a; --box: #8a6a46; --cam: #6fb0ea;
+    --accent: #6fb0ea; --accent-soft: #1d2e3e; --warn: #f07b52; --ok: #6cc47e; --m1: #f0a060; --m2: #b48ae6; --m3: #6fb0ea;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b;
+  --rug: #2c2a26; --rug-line: #38352f; --cat: #c9ccd2; --cat-belly: #5a5d63; --robot: #9fb0c0; --rod: #d9dde1;
+  --toy: #f07ba0; --toy2: #f2c35a; --box: #8a6a46; --cam: #6fb0ea;
+  --accent: #6fb0ea; --accent-soft: #1d2e3e; --warn: #f07b52; --ok: #6cc47e; --m1: #f0a060; --m2: #b48ae6; --m3: #6fb0ea;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+.wrap { max-width: 1160px; margin: 0 auto; padding: 22px 16px 44px; display: grid; gap: 18px; }
+header h1 { font-family: var(--font-display); font-weight: 800; font-size: 28px; margin: 0; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 66ch; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
+@media (max-width: 880px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.left { display: grid; gap: 8px; min-width: 0; }
+.stage { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+#sim { display: block; width: 100%; aspect-ratio: 3 / 2; max-width: 100%; }
+.say { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 9px 13px; font-size: 14px; line-height: 1.6; min-height: 3.4em; }
+.say b { color: var(--accent); }
+.panel { display: grid; gap: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.label { font-size: 12px; letter-spacing: .06em; color: var(--muted); font-weight: 500; }
+.seg { display: grid; gap: 6px; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label { border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px; cursor: pointer; font-size: 13.5px; display: grid; }
+.seg label small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.seg input:checked + label { border-color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+.seg input:checked + label small { font-weight: 400; }
+.seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+button { font: inherit; font-size: 14px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.big { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 700; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.row input { accent-color: var(--accent); }
+.row.check { flex-wrap: nowrap; align-items: flex-start; line-height: 1.5; }
+.row.check input { margin-top: 3px; flex: none; }
+select { font: inherit; font-size: 14px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+.meters { display: grid; gap: 6px; }
+.meter { display: grid; grid-template-columns: 6.2em 1fr 3em; gap: 8px; align-items: center; font-size: 13px; }
+.meter .bar { height: 9px; border-radius: 5px; background: var(--bg); overflow: hidden; }
+.meter .bar i { display: block; height: 100%; width: 0; border-radius: 5px; background: var(--accent); }
+.meter span:last-child { font-family: var(--font-mono); font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stats div { background: var(--bg); border-radius: 10px; padding: 7px 10px; display: grid; }
+.stats b { font-weight: 400; font-size: 12px; color: var(--muted); }
+.stats span { font-family: var(--font-mono); font-size: 18px; font-variant-numeric: tabular-nums; }
+.btns { display: grid; gap: 8px; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
+h2 { font-family: var(--font-display); font-weight: 800; font-size: 19px; margin: 0 0 4px; }
+.loop-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 10px; }
+.loop-head p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.cards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; list-style: none; padding: 0; margin: 0; }
+@media (max-width: 960px) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cards li { background: var(--panel); border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 11px; display: grid; gap: 3px; align-content: start; min-width: 0; }
+.cards li.active { border-color: var(--accent); background: var(--accent-soft); }
+.cards .n { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
+.cards strong { font-family: var(--font-display); font-size: 16px; }
+.cards .d { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.chartbox { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
+.chartbox h3 { margin: 0 0 4px; font-size: 13px; font-weight: 500; color: var(--muted); }
+#chart { display: block; width: 100%; height: 190px; }
+.charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 12px; }
+@media (max-width: 880px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+#bars { display: block; width: 100%; height: 230px; }
+#chart { height: 230px; }
+.note { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin: 6px 0 0; }
+@media (max-width: 600px) { select, button { min-height: 44px; } .wrap { padding-left: 12px; padding-right: 12px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a href="../index.html" style="display:inline-block;padding:11px 0;font-size:13px;color:var(--muted);text-decoration:none">← サンプルアプリ一覧へ</a>
+    <h1>猫じゃらしロボット</h1>
+    <p>2 つのサーボで長さ 60 cm の棒を動かし、先の羽根のおもちゃで猫と遊ぶロボットです。ロボットは猫の気持ちを知りません。分かるのは、カメラで測れる<b>猫の位置と動き</b>だけです。それを「反応のよさ」の点数にして、5 つの動かし方のどれがその猫に合うかを、遊びながら学びます(多腕バンディット)。猫は、好みの違う 3 匹の<b>テスト用の猫</b>から選べます。好みはロボットには見えません。</p>
+  </header>
+
+  <div class="main">
+    <div class="left">
+      <div class="stage"><canvas id="sim" aria-label="床を真上から見た画面。下の中央にロボット、棒の先におもちゃ、猫がおもちゃを追う"></canvas></div>
+      <p class="say" id="say"></p>
+    </div>
+    <div class="panel">
+      <div>
+        <div class="label">動かし方の選び方</div>
+        <div class="seg" role="radiogroup" aria-label="動かし方の選び方">
+          <input type="radio" name="mode" id="m1" value="1"><label for="m1">1. いつも「左右に振る」<small>安い自動猫じゃらしと同じ。学習しない</small></label>
+          <input type="radio" name="mode" id="m2" value="2"><label for="m2">2. 毎回ランダムに選ぶ<small>5 つを順番に関係なく試す。学習しない</small></label>
+          <input type="radio" name="mode" id="m3" value="3" checked><label for="m3">3. 反応を見て学ぶ(UCB)<small>点数がよかった動かし方を多く選び、ときどき他も試す</small></label>
+        </div>
+      </div>
+      <div class="row"><label for="catSel">テスト用の猫</label>
+        <select id="catSel"><option value="hana">ハナ</option><option value="sora">ソラ</option><option value="kuro">クロ</option></select>
+      </div>
+      <label class="row check"><input type="checkbox" id="answer"><span>答え合わせ(テスト用の猫の本当の好み)をグラフに出す</span></label>
+      <label class="row check"><input type="checkbox" id="watching" checked><span>人が見ている(見ていないときは動かさない)</span></label>
+      <div class="row"><label for="speed">速さ</label>
+        <select id="speed"><option value="1">実際の速さ</option><option value="3" selected>3 倍</option><option value="10">10 倍</option></select>
+      </div>
+      <hr>
+      <div class="stats" aria-live="polite">
+        <div><b>時間</b><span id="sTime">0:00</span></div>
+        <div><b>試した回数</b><span id="sTrial">0</span></div>
+        <div><b>いまの動かし方</b><span id="sArm" style="font-size:15px">—</span></div>
+        <div><b>前回の点数</b><span id="sLast">—</span></div>
+        <div><b>猫とおもちゃの距離</b><span id="sDist">—</span></div>
+        <div><b>飛びかかった</b><span id="sPounce">0</span></div>
+      </div>
+      <div class="btns">
+        <button class="big" id="bReset">最初からやり直す</button>
+        <button id="bCompare">3 つの選び方を比べる(3 匹 × 40 回をすぐ計算)</button>
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <div class="loop-head">
+      <h2>ロボットの頭の中</h2>
+      <p>1〜3 と 5〜6 は 1 秒に 20 回、4 は 20 秒に 1 回。</p>
+    </div>
+    <ol class="cards">
+      <li id="c1"><span class="n">1</span><strong>見る</strong><span class="d">カメラの画像から猫を見つけ(YOLO の cat)、床の上の位置に直す</span></li>
+      <li id="c2"><span class="n">2</span><strong>測る</strong><span class="d">猫とおもちゃの距離、近づく速さ、飛びかかり(秒速 1 m 以上の急な動き)</span></li>
+      <li id="c3"><span class="n">3</span><strong>点数にする</strong><span class="d">20 秒のあいだに、近くで追っていた時間と飛びかかりの回数から 0〜1 の点数</span></li>
+      <li id="c4"><span class="n">4</span><strong>動かし方を選ぶ</strong><span class="d">これまでの点数の平均 + 試した回数が少ない分のおまけ(UCB)が一番大きいもの</span></li>
+      <li id="c5"><span class="n">5</span><strong>角度に直す</strong><span class="d">おもちゃを置きたい向きと高さから、2 つのサーボの角度を計算する</span></li>
+      <li id="c6"><span class="n">6</span><strong>動かす・安全</strong><span class="d">速さの上限を守って動かす。猫が近すぎる・人がいないときは止める</span></li>
+    </ol>
+  </section>
+
+  <section class="charts">
+    <div class="chartbox">
+      <h3>動かし方ごとの見積もり(棒 = 点数の平均、細い線 = UCB、n = 試した回数)</h3>
+      <canvas id="bars"></canvas>
+      <p class="note" id="barsNote"></p>
+    </div>
+    <div class="chartbox">
+      <h3>試すたびの点数(点の色 = 動かし方、線 = 最近 5 回の平均)</h3>
+      <canvas id="chart"></canvas>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  // ---------- 遊び場(単位 m)。ロボットは (0, 0)、前が +y ----------
+  const AREA = { x0: -1.5, x1: 1.5, y0: -0.1, y1: 1.9 };
+  const H0 = 0.30, L = 0.60;           // 棒の根元の高さと、棒の長さ
+  const PAN_MAX = 65 * Math.PI / 180;  // 首振りの範囲 ±65°
+  const SERVO_SPEED = 400 * Math.PI / 180;   // サーボの速さ [rad/s]
+  const DT = 0.05;
+  const TRIAL = 20;                    // 1 回の試しは 20 秒
+  const HIDE = { a0: 50 * Math.PI / 180, a1: 70 * Math.PI / 180 };
+  const BOX = { x: -0.52, y: 0.50, w: 0.24, h: 0.16 };
+  const ARMS = [
+    { id: 'mouse', name: 'ネズミ', color: '#c9772e', desc: '床を走る・止まる・そっと動く' },
+    { id: 'hide', name: 'かくれんぼ', color: '#8a5cc4', desc: '箱に隠れて、のぞく' },
+    { id: 'bird', name: '鳥', color: '#1f6fb2', desc: '高く上げて羽ばたく・急に降りる' },
+    { id: 'bug', name: '虫', color: '#3aa55d', desc: '床の上で小刻みに速く動く' },
+    { id: 'sweep', name: '左右に振る', color: '#8f8a84', desc: '一定の速さで左右に' },
+  ];
+  // テスト用の猫。好み(0〜1)は「仮定」で、ロボットのプログラムからは読まない
+  const CATS = {
+    hana: { name: 'ハナ', pref: { mouse: 0.9, hide: 0.55, bird: 0.2, bug: 0.45, sweep: 0.12 } },
+    sora: { name: 'ソラ', pref: { mouse: 0.35, hide: 0.3, bird: 0.9, bug: 0.4, sweep: 0.12 } },
+    kuro: { name: 'クロ', pref: { mouse: 0.45, hide: 0.9, bird: 0.25, bug: 0.3, sweep: 0.1 } },
+  };
+  const UCB_C = 0.35, GAMMA = 0.9;     // UCB のおまけの大きさと、古い点数を忘れる割合(1 回ごとに 0.9 倍)
+
+  let seed = 1;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const angWrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+  const mode = () => +document.querySelector('input[name="mode"]:checked').value;
+
+  // ---------- 5. 角度に直す(逆運動学) ----------
+  // 首振り pan で向き、傾き tilt で高さを決める。棒の長さが決まっているので、高さを決めると届く距離も決まる
+  function ik(pan, height) { return { pan: clamp(pan, -PAN_MAX, PAN_MAX), tilt: Math.asin(clamp((height - H0) / L, -1, 1)) }; }
+  function fk(pan, tilt) { const r = L * Math.cos(tilt); return { x: -r * Math.sin(pan), y: r * Math.cos(pan), z: H0 + L * Math.sin(tilt) }; }
+  const panOf = (x, y) => Math.atan2(-x, y);
+
+  let S;
+  function reset(opts = {}) {
+    seed = opts.seed || 5;
+    const q = ik(-0.3, 0.03), cat = opts.cat || $('catSel').value;
+    S = {
+      t: 0, pan: q.pan, tilt: q.tilt, cmd: { pan: q.pan, height: 0.03 }, catId: cat,
+      toy: { x: 0, y: 0.5, z: 0.03, vx: 0, vy: 0, hidden: false, caught: false },
+      prey: { st: 'creep', t: 0, dur: 2, target: -0.3, misses: 0, h: 0.03 },
+      cat: { x: -0.7, y: 1.45, hd: -0.6, vx: 0, vy: 0, st: 'watch', t: 0, interest: 0.5, energy: 1, crouch: 0, px: 0, py: 0, hab: Object.fromEntries(ARMS.map(a => [a.id, 0])) },
+      prevToy: { sp: 0, ang: 0, hidden: false, z: 0.03 }, evTimes: [],
+      // ロボットが持っている情報(観測と学習)
+      arm: null, trialT: 0, trialN: 0, obs: { near: 0, n: 0, pounces: 0 }, pounces: 0, lastR: null,
+      bandit: Object.fromEntries(ARMS.map(a => [a.id, { s: 0, n: 0, plays: 0 }])), history: [],
+      prevCat: { x: -0.7, y: 1.45 }, catSpeed: 0, card: 1, lastSay: -99, stopped: false, tooClose: false,
+    };
+    startTrial();
+    say({
+      1: 'いつも<b>左右に振る</b>だけです。猫の反応を見ても、動かし方は変えません。',
+      2: '20 秒ごとに、5 つの動かし方から<b>ランダムに</b>選びます。反応がよくても悪くても、次の選び方は変わりません。',
+      3: '20 秒ごとに、これまでの点数を見て動かし方を選びます。最初は 5 つを 1 回ずつ試し、そのあとは<b>点数がよかったものを多めに、ときどき他も</b>試します。',
+    }[mode()]);
+  }
+  function say(h) { $('say').innerHTML = h; }
+  function sayOnce(h, gap = 5) { if (S.t - S.lastSay > gap) { say(h); S.lastSay = S.t; } }
+
+  // ---------- 4. 動かし方を選ぶ(多腕バンディット: 割引つき UCB) ----------
+  function ucb(id) {
+    const b = S.bandit[id], N = ARMS.reduce((a, x) => a + S.bandit[x.id].n, 0);
+    if (b.n < 1e-6) return Infinity;
+    return b.s / b.n + UCB_C * Math.sqrt(Math.log(Math.max(N, 1.0001)) / b.n);
+  }
+  function chooseArm() {
+    const m = mode();
+    if (m === 1) return 'sweep';
+    if (m === 2) return ARMS[Math.floor(rnd() * ARMS.length)].id;
+    const untried = ARMS.filter(a => S.bandit[a.id].plays === 0);
+    if (untried.length) return untried[0].id;
+    return ARMS.reduce((best, a) => (ucb(a.id) > ucb(best) ? a.id : best), ARMS[0].id);
+  }
+  function startTrial() {
+    S.arm = chooseArm(); S.trialT = 0; S.obs = { near: 0, n: 0, pounces: 0 };
+    S.prey.st = 'creep'; S.prey.t = 0; S.prey.dur = 1; S.prey.misses = 0;
+  }
+  function endTrial() {
+    // 3. 点数にする: おもちゃに向かって進んでいた時間の割合 × 2 + 飛びかかり 1 回 0.25(1 で頭打ち)
+    const o = S.obs, r = Math.min(1, 2 * (o.near / Math.max(o.n, 1)) + 0.25 * o.pounces);
+    // 学習: 古い点数を少しずつ忘れてから(猫は同じ遊びに慣れるので)、今回の点数を足す
+    for (const a of ARMS) { S.bandit[a.id].s *= GAMMA; S.bandit[a.id].n *= GAMMA; }
+    const b = S.bandit[S.arm]; b.s += r; b.n += 1; b.plays++;
+    S.history.push({ t: S.t, arm: S.arm, r });
+    S.lastR = r; S.trialN++;
+    // テスト用の猫の「慣れ」(ロボットは知らない): 使った遊びは飽き、使わなかった遊びは少しずつ戻る
+    for (const a of ARMS) S.cat.hab[a.id] = a.id === S.arm ? Math.min(0.35, S.cat.hab[a.id] + 0.07) : S.cat.hab[a.id] * 0.75;
+    const name = ARMS.find(a => a.id === S.arm).name;
+    startTrial();
+    if (mode() === 3) sayOnce(`「${name}」の点数は <b>${r.toFixed(2)}</b>。次は「${ARMS.find(a => a.id === S.arm).name}」(UCB が一番大きい)。`, 0);
+  }
+
+  // ---------- 動きを作る(動かし方ごと) ----------
+  function decide() {
+    const c = S.cat, p = S.prey, toy = S.toy;
+    p.t += DT; S.card = 5;
+    // 6. 安全
+    if (!$('watching').checked) { S.stopped = true; S.card = 6; return; }
+    S.stopped = false;
+    S.tooClose = Math.hypot(c.x, c.y) < 0.36;
+    if (S.tooClose) { S.card = 6; sayOnce('<b>安全</b>: 猫がロボットに近すぎるので、棒を下げて止めます(棒が猫の顔に当たらないように)。'); return; }
+    const catPan = panOf(c.x, c.y), toyPan = S.pan, away = toyPan > catPan ? 1 : -1;
+    const dCat = Math.hypot(c.x - toy.x, c.y - toy.y);
+    if (p.st === 'caught') { if (p.t > 3) { p.st = 'creep'; p.t = 0; p.dur = 1; toy.caught = false; } return setCmd(toyPan, 0.02); }
+    // 飛びかかられたら: 空振りが 3 回続いたら捕まえさせる(獣医師の助言: 最後に捕まえられないと猫はもやもやする)。それ以外は逃げる
+    if (S.catSpeed > 1.0 && dCat < 0.6 && p.st !== 'flee' && p.st !== 'yield') {
+      p.misses++;
+      if (p.misses >= 3) { p.st = 'yield'; p.t = 0; }
+      else { let dir = away; if (Math.abs(clamp(toyPan + dir * 0.6, -PAN_MAX, PAN_MAX) - toyPan) < 0.35) dir = -dir; p.st = 'flee'; p.t = 0; p.target = clamp(toyPan + dir * 0.8, -PAN_MAX, PAN_MAX); }
+    }
+    if (p.st === 'yield') { if (p.t > 2) { p.st = 'creep'; p.t = 0; p.misses = 0; } return setCmd(toyPan, 0.02); }
+    if (p.st === 'flee') { if (p.t > 0.7) { p.st = 'creep'; p.t = 0; p.dur = 0.5; } return setCmd(p.target, p.t < 0.45 ? 0.48 : 0.03); }
+    if (Math.abs(toyPan) > PAN_MAX - 0.05 && dCat < 0.5) { p.st = 'dart'; p.t = 0; p.dur = 0.6; p.target = -Math.sign(toyPan) * 0.3; }
+    switch (S.arm) {
+      case 'sweep': return setCmd(0.9 * Math.sin(2 * Math.PI * 0.35 * S.t), 0.03);
+      case 'bug': {         // 床の上で小刻みに、ときどき場所を変える
+        if (p.t > p.dur) { p.t = 0; p.dur = 1 + rnd() * 1.5; p.target = clamp(toyPan + (rnd() - 0.5) * 0.8, -PAN_MAX + 0.1, HIDE.a0 - 0.1); }
+        return setCmd(p.target + 0.07 * Math.sin(p.t * 25) * (rnd() < 0.9 ? 1 : 0), 0.03);
+      }
+      case 'bird': {        // 高く上げて羽ばたく → 急に降りて止まる → また上がる
+        if (p.t > p.dur) { p.t = 0; p.st = p.st === 'up' ? 'land' : 'up'; p.dur = p.st === 'up' ? 1.5 + rnd() : 1 + rnd() * 1.5; p.target = clamp(toyPan + away * (0.3 + rnd() * 0.4), -PAN_MAX, PAN_MAX); }
+        if (p.st === 'up') return setCmd(toyPan + clamp(p.target - toyPan, -0.6 * DT, 0.6 * DT) + 0.06 * Math.sin(p.t * 18), 0.44 + 0.06 * Math.sin(p.t * 11));
+        return setCmd(toyPan, 0.05);
+      }
+      case 'hide': {        // 箱に隠れる → のぞく → 少し出て止まる → 戻る
+        if (p.t > p.dur) { p.t = 0; p.st = { hide: 'peek', peek: 'out', out: 'hide' }[p.st] || 'hide'; p.dur = { hide: 1.5 + rnd() * 2, peek: 1.6, out: 1 + rnd() * 1.5 }[p.st]; }
+        if (p.st === 'hide') return setCmd(HIDE.a0 + 0.2, 0.03);
+        if (p.st === 'peek') return setCmd(HIDE.a0 - 0.2 * Math.sin(p.t / p.dur * Math.PI), 0.03);
+        return setCmd(HIDE.a0 - 0.45, 0.03);
+      }
+      default: {            // ネズミ: そっと動く・止まる・急に走る(猫から遠ざかる方へ)
+        if (p.t > p.dur) {
+          p.t = 0; const r = rnd();
+          p.st = r < 0.4 ? 'creep' : r < 0.7 ? 'freeze' : 'dart';
+          p.dur = p.st === 'dart' ? 0.5 : 1 + rnd() * 2;
+          p.target = clamp(toyPan + away * (p.st === 'dart' ? 0.6 + rnd() * 0.5 : 0.3 + rnd() * 0.3), -PAN_MAX, HIDE.a0 - 0.05);
+        }
+        if (p.st === 'freeze') return setCmd(toyPan, 0.03);
+        if (p.st === 'dart') return setCmd(p.target, 0.03);
+        return setCmd(toyPan + clamp(p.target - toyPan, -0.35 * DT, 0.35 * DT), 0.03);
+      }
+    }
+  }
+  function setCmd(pan, height) { S.cmd = { pan: clamp(pan, -PAN_MAX, PAN_MAX), height }; }
+
+  // ---------- 6. 動かす(サーボは速さに上限がある) ----------
+  function servos() {
+    let q = ik(S.cmd.pan, S.cmd.height);
+    if (S.stopped || S.tooClose) q = ik(S.pan, 0.02);
+    const mv = SERVO_SPEED * DT;
+    S.pan += clamp(q.pan - S.pan, -mv, mv);
+    S.tilt += clamp(q.tilt - S.tilt, -mv, mv);
+    const t = fk(S.pan, S.tilt), toy = S.toy;
+    toy.vx = (t.x - toy.x) / DT; toy.vy = (t.y - toy.y) / DT; toy.x = t.x; toy.y = t.y; toy.z = t.z;
+    toy.hidden = S.pan > HIDE.a0 && S.pan < HIDE.a1 && toy.z < 0.2;
+  }
+
+  // ---------- テスト用の猫(ロボットのプログラムとは別。ロボットはこの中を読まない) ----------
+  // 好み × (1 − 慣れ) の大きさで、獲物らしい出来事(動き出し・出てくる・羽ばたき・向きの急な変化)に反応する、という仮定の動き。
+  // 本物の猫を表すモデルではなく、学習のしくみを確かめるための「好みが違う、動く相手」
+  function catStep() {
+    const c = S.cat, toy = S.toy;
+    c.t += DT;
+    const eff = CATS[S.catId].pref[S.arm] * (1 - c.hab[S.arm]);
+    const sp = Math.hypot(toy.vx, toy.vy), ang = Math.atan2(toy.vy, toy.vx), pv = S.prevToy;
+    let ev = false;
+    if (!toy.hidden && !toy.caught) {
+      if (pv.sp < 0.05 && sp > 0.25) ev = true;                                   // 止まっていたのが動き出す
+      if (pv.hidden) ev = true;                                                  // 隠れていたのが出てくる
+      if (sp > 0.2 && pv.sp > 0.2 && Math.abs(angWrap(ang - pv.ang)) > 1.2) ev = true;   // 向きが急に変わる
+      if (toy.z > 0.3 && pv.z <= 0.3) ev = true;                                  // 高く上がる
+    }
+    // 出来事は 0.4 秒に 1 回まで数える。直近 3 秒に 1.5 回以上あれば「刺激」は最大(0.6〜1)
+    if (ev && S.t - (S.evTimes[S.evTimes.length - 1] ?? -9) > 0.4) S.evTimes.push(S.t);
+    while (S.evTimes.length && S.evTimes[0] < S.t - 3) S.evTimes.shift();
+    const stim = clamp(S.evTimes.length / 1.5, 0.6, 1);
+    // テスト用の猫の「興味」は「好み × 慣れていない度合い × 刺激」に、数秒かけて近づく(仮定)
+    c.interest = clamp(c.interest + DT * 0.4 * (Math.min(1, 1.2 * eff * stim) - c.interest), 0, 1);
+    S.prevToy = { sp, ang, hidden: toy.hidden, z: toy.z };
+    const dx = toy.x - c.x, dy = toy.y - c.y, d = Math.hypot(dx, dy), face = Math.atan2(dy, dx);
+    const turn = (to, rate) => { c.hd += clamp(angWrap(to - c.hd), -rate * DT, rate * DT); };
+    const walk = v => {
+      c.x = clamp(c.x + Math.cos(c.hd) * v * DT, AREA.x0 + 0.1, AREA.x1 - 0.1); c.y = clamp(c.y + Math.sin(c.hd) * v * DT, 0.12, AREA.y1 - 0.1);
+      const r = Math.hypot(c.x, c.y); if (r < 0.4) { c.x *= 0.4 / r; c.y *= 0.4 / r; }
+    };
+    switch (c.st) {
+      case 'watch':
+        if (!toy.hidden) turn(face, 3);
+        if (c.interest > 0.4 && c.energy > 0.25 && !toy.hidden) { c.st = 'stalk'; c.t = 0; }
+        else if (c.interest < 0.12) { c.st = 'away'; c.t = 0; c.wander = null; }
+        else if (c.energy < 0.2) { c.st = 'rest'; c.t = 0; }
+        break;
+      case 'stalk':
+        if (toy.hidden) { c.st = 'watch'; c.t = 0; break; }
+        turn(face, 2.5); if (d > 0.45) walk(0.2); else { c.st = 'crouch'; c.t = 0; c.crouch = 1.2 + rnd() * 2.3; }
+        if (c.interest < 0.25) { c.st = 'watch'; c.t = 0; }
+        if (c.energy < 0.2) { c.st = 'rest'; c.t = 0; }
+        break;
+      case 'crouch':
+        turn(face, 3);
+        if (d > 0.7) { c.st = 'stalk'; c.t = 0; break; }
+        if (c.t > c.crouch && d < 0.55 && (sp > 0.12 || c.t > c.crouch + 4) && !toy.hidden && c.interest > 0.3) {
+          c.st = 'pounce'; c.t = 0; c.px = toy.x; c.py = toy.y; c.energy = Math.max(0, c.energy - 0.045);
+        }
+        if ((toy.hidden && c.t > 3) || c.interest < 0.2) { c.st = 'watch'; c.t = 0; }
+        break;
+      case 'pounce': {
+        if (c.t < 0.06) { c.px = toy.x; c.py = toy.y; }
+        const tx = c.px - c.x, ty = c.py - c.y, td = Math.hypot(tx, ty);
+        c.hd = Math.atan2(ty, tx);
+        if (td > 0.05 && c.t < 0.45) walk(2.2);
+        else if (d < 0.11 && toy.z < 0.25) { c.st = 'hold'; c.t = 0; toy.caught = true; S.prey.st = 'caught'; S.prey.t = 0; S.prey.misses = 0; }
+        else { c.st = 'recover'; c.t = 0; c.crouch = 2 + rnd() * 3; }
+        break;
+      }
+      case 'hold': if (c.t > 3) { c.st = 'watch'; c.t = 0; } break;
+      case 'recover': if (!toy.hidden) turn(face, 3); if (c.t > c.crouch) { c.st = c.energy < 0.2 ? 'rest' : 'watch'; c.t = 0; } break;
+      case 'away':                         // 興味をなくして離れる
+        if (!c.wander) c.wander = [-0.9 + rnd() * 1.8, 1.2 + rnd() * 0.5];
+        if (Math.hypot(c.wander[0] - c.x, c.wander[1] - c.y) > 0.1) { turn(Math.atan2(c.wander[1] - c.y, c.wander[0] - c.x), 3); walk(0.15); }
+        if (c.interest > 0.3) { c.st = 'watch'; c.t = 0; }
+        break;
+      case 'rest': c.energy = clamp(c.energy + 0.02 * DT, 0, 1); if (c.energy > 0.5) { c.st = 'watch'; c.t = 0; } break;
+    }
+    if (c.st !== 'pounce') c.energy = clamp(c.energy + 0.0015 * DT, 0, 1);
+  }
+
+  // ---------- 1〜2. 見る・測る(ロボットはカメラで測れるものだけを使う) ----------
+  function observe() {
+    const c = S.cat, toy = S.toy;
+    const vx = (c.x - S.prevCat.x) / DT, vy = (c.y - S.prevCat.y) / DT;   // 位置の差から速さを出す(実物なら追跡の結果)
+    S.prevCat = { x: c.x, y: c.y }; S.catSpeed = Math.hypot(vx, vy);
+    const dx = toy.x - c.x, dy = toy.y - c.y, d = Math.hypot(dx, dy);
+    const approach = d > 1e-6 ? (vx * dx + vy * dy) / d : 0;              // おもちゃに近づく速さ(内積)
+    const low = c.st === 'crouch';   // 低く構えた姿勢(実物なら姿勢推定や枠の縦横比で分かる)
+    const near = (d < 1.0 && approach > 0.05) || (d < 0.7 && low);   // おもちゃに向かって進んでいる・近くで低く構えている
+    S.obs.n++; if (near) S.obs.near++;
+    if (S.catSpeed > 1.0 && !S.wasFast) { S.obs.pounces++; S.pounces++; }  // 急な動き = 飛びかかり
+    S.wasFast = S.catSpeed > 1.0; S.dist = d;
+  }
+  function step() {
+    S.t += DT; S.trialT += DT;
+    decide(); servos(); catStep(); observe();
+    if (S.trialT >= TRIAL) { S.card = 4; endTrial(); }
+  }
+
+  // ---------- 描く ----------
+  const cv = $('sim'), ctx = cv.getContext('2d'), ch = $('chart'), cx2 = ch.getContext('2d'), bc = $('bars'), bx = bc.getContext('2d');
+  let Cc = {}, V = {}, CH = {}, BC = {};
+  function readColors() { const cs = getComputedStyle(document.documentElement); for (const k of ['ink', 'muted', 'line', 'panel', 'rug', 'rug-line', 'cat', 'cat-belly', 'robot', 'rod', 'toy', 'toy2', 'box', 'cam', 'accent', 'warn', 'ok']) Cc[k] = cs.getPropertyValue('--' + k).trim(); }
+  function fit(c) { const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1; c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); return { w: r.width, h: r.height, dpr }; }
+  function resize() { V = fit(cv); V.s = Math.min((V.w - 20) / (AREA.x1 - AREA.x0), (V.h - 20) / (AREA.y1 - AREA.y0)); V.ox = V.w / 2; V.oy = V.h - 18 - (0 - AREA.y0) * V.s; CH = fit(ch); BC = fit(bc); }
+  const P = (x, y) => [V.ox + x * V.s, V.oy - y * V.s];
+  function drawCat(c) {
+    const p = P(c.x, c.y), s = V.s;
+    ctx.save(); ctx.translate(p[0], p[1]); ctx.rotate(-c.hd);
+    const crouch = c.st === 'crouch', stretch = c.st === 'pounce' ? 1.35 : 1, lie = c.st === 'rest' || c.st === 'away';
+    const bl = 0.2 * s * stretch, bw = (crouch ? 0.085 : 0.075) * s;
+    ctx.fillStyle = Cc.cat; ctx.strokeStyle = Cc.cat; ctx.lineWidth = 0.025 * s; ctx.lineCap = 'round';
+    const wig = crouch ? Math.sin(S.t * 14) * 0.6 : Math.sin(S.t * 2) * 0.3;
+    ctx.beginPath(); ctx.moveTo(-bl * 0.9, 0); ctx.quadraticCurveTo(-bl * 1.5, wig * bl * 0.6, -bl * 1.75, (lie ? 0.8 : wig) * bl * 0.5); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(0, 0, bl, bw, 0, 0, 7); ctx.fill();
+    const hx = bl * 0.95, hr = 0.065 * s;
+    ctx.beginPath(); ctx.arc(hx, 0, hr, 0, 7); ctx.fill();
+    for (const sg of [-1, 1]) { ctx.beginPath(); ctx.moveTo(hx + hr * 0.2, sg * hr * 0.5); ctx.lineTo(hx + hr * 1.25, sg * hr * 1.05); ctx.lineTo(hx - hr * 0.4, sg * hr * 1.0); ctx.fill(); }
+    ctx.fillStyle = Cc['cat-belly']; ctx.beginPath(); ctx.arc(hx + hr * 0.55, -hr * 0.35, hr * 0.16, 0, 7); ctx.arc(hx + hr * 0.55, hr * 0.35, hr * 0.16, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+  function draw() {
+    const { w, h, dpr, s } = V;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = Cc.panel; ctx.fillRect(0, 0, w, h);
+    let a = P(AREA.x0, AREA.y1); ctx.fillStyle = Cc.rug; ctx.fillRect(a[0], a[1], (AREA.x1 - AREA.x0) * s, (AREA.y1 - AREA.y0) * s);
+    ctx.strokeStyle = Cc['rug-line']; ctx.lineWidth = 1;
+    for (let x = -1.5; x <= AREA.x1; x += 0.5) { const p = P(x, 0); ctx.beginPath(); ctx.moveTo(p[0], a[1]); ctx.lineTo(p[0], a[1] + (AREA.y1 - AREA.y0) * s); ctx.stroke(); }
+    ctx.fillStyle = Cc.cam; ctx.globalAlpha = 0.035; ctx.beginPath(); let o = P(0, 0.05); ctx.moveTo(o[0], o[1]);
+    for (let k = -1; k <= 1; k += 0.1) { const q = P(-2.3 * Math.sin(k * 0.95), 2.3 * Math.cos(k * 0.95)); ctx.lineTo(q[0], q[1]); }
+    ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+    const rLow = L * Math.cos(Math.asin((0.03 - H0) / L));
+    ctx.strokeStyle = Cc.muted; ctx.setLineDash([3, 5]); ctx.beginPath(); o = P(0, 0); ctx.arc(o[0], o[1], rLow * s, -Math.PI / 2 - PAN_MAX, -Math.PI / 2 + PAN_MAX); ctx.stroke(); ctx.setLineDash([]);
+    a = P(BOX.x - BOX.w / 2, BOX.y + BOX.h / 2); ctx.fillStyle = Cc.box; ctx.fillRect(a[0], a[1], BOX.w * s, BOX.h * s);
+    ctx.fillStyle = Cc.panel; ctx.font = '600 12px "Noto Sans JP", sans-serif'; ctx.fillText('箱', a[0] + 6, a[1] + 15);
+    const toy = S.toy, tp = P(toy.x, toy.y), bp = P(0, 0), lift = toy.z * s * 0.55;
+    ctx.fillStyle = 'rgba(0,0,0,.16)'; ctx.beginPath(); ctx.ellipse(tp[0], tp[1], 0.035 * s, 0.022 * s, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = Cc.rod; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(bp[0], bp[1] - H0 * s * 0.55); ctx.lineTo(tp[0], tp[1] - lift); ctx.stroke();
+    ctx.globalAlpha = toy.hidden ? 0.35 : 1;
+    ctx.fillStyle = Cc.toy; ctx.beginPath(); ctx.ellipse(tp[0], tp[1] - lift, 0.04 * s, 0.022 * s, -S.pan, 0, 7); ctx.fill();
+    ctx.fillStyle = Cc.toy2; ctx.beginPath(); ctx.arc(tp[0] + 0.03 * s, tp[1] - lift - 0.01 * s, 0.016 * s, 0, 7); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = Cc.robot; ctx.fillRect(bp[0] - 0.09 * s, bp[1] - 0.06 * s, 0.18 * s, 0.12 * s);
+    ctx.fillStyle = Cc.cam; ctx.beginPath(); ctx.arc(bp[0], bp[1] - 0.075 * s, 0.022 * s, 0, 7); ctx.fill();
+    ctx.fillStyle = Cc.muted; ctx.font = '500 12px "Noto Sans JP", sans-serif'; ctx.fillText('ロボット(カメラ付き)', bp[0] + 0.11 * s, bp[1] + 4);
+    drawCat(S.cat);
+    // カメラが見つけた猫の枠と、測った値(ロボットが知っているのはこれだけ)
+    const cp = P(S.cat.x, S.cat.y);
+    ctx.strokeStyle = Cc.cam; ctx.lineWidth = 1.5; ctx.strokeRect(cp[0] - 0.2 * s, cp[1] - 0.17 * s, 0.4 * s, 0.34 * s);
+    ctx.fillStyle = Cc.cam; ctx.font = '600 11px "IBM Plex Mono", monospace';
+    ctx.fillText(`cat  ${S.catSpeed.toFixed(2)} m/s${S.catSpeed > 1 ? '  POUNCE' : ''}`, cp[0] - 0.2 * s, cp[1] - 0.18 * s - 4);
+    ctx.strokeStyle = Cc.cam; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(cp[0], cp[1]); ctx.lineTo(tp[0], tp[1]); ctx.stroke(); ctx.setLineDash([]);
+    // 左上: いまの試し
+    const armName = ARMS.find(x => x.id === S.arm).name;
+    ctx.fillStyle = Cc.panel; ctx.globalAlpha = 0.92; ctx.fillRect(10, 10, 250, 58); ctx.globalAlpha = 1; ctx.strokeStyle = Cc.line; ctx.strokeRect(10, 10, 250, 58);
+    ctx.fillStyle = Cc.ink; ctx.font = '700 14px "Noto Sans JP", sans-serif'; ctx.fillText(`${S.trialN + 1} 回目: ${armName}`, 18, 30);
+    ctx.font = '500 12px "Noto Sans JP", sans-serif'; ctx.fillStyle = Cc.muted;
+    const frac = S.obs.near / Math.max(S.obs.n, 1);
+    ctx.fillText(`残り ${Math.max(0, TRIAL - S.trialT).toFixed(0)} 秒・近くで追った ${(frac * 100).toFixed(0)} %・飛びかかり ${S.obs.pounces}`, 18, 50);
+    ctx.fillStyle = Cc.accent; ctx.fillRect(18, 58, 234 * Math.min(1, S.trialT / TRIAL), 3);
+    if (S.stopped || S.tooClose) { ctx.fillStyle = Cc.warn; ctx.font = '800 15px "M PLUS Rounded 1c", sans-serif'; ctx.fillText(S.stopped ? '停止中(人が見ていない)' : '停止中(猫が近すぎる)', bp[0] - 80, bp[1] - 0.2 * s); }
+    drawSide();
+  }
+  function drawSide() {
+    const bw = 210, bh = 112, x0 = V.w - bw - 10, y0 = 10;
+    ctx.fillStyle = Cc.panel; ctx.strokeStyle = Cc.line; ctx.lineWidth = 1; ctx.fillRect(x0, y0, bw, bh); ctx.strokeRect(x0, y0, bw, bh);
+    const k = 130, gx = x0 + 34, gy = y0 + bh - 18;
+    ctx.strokeStyle = Cc.muted; ctx.beginPath(); ctx.moveTo(x0 + 8, gy); ctx.lineTo(x0 + bw - 8, gy); ctx.stroke();
+    ctx.strokeStyle = Cc.robot; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx, gy - H0 * k); ctx.stroke();
+    const tx = gx + L * Math.cos(S.tilt) * k, ty = gy - (H0 + L * Math.sin(S.tilt)) * k;
+    ctx.strokeStyle = Cc.rod; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(gx, gy - H0 * k); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.fillStyle = Cc.toy; ctx.beginPath(); ctx.arc(tx, ty, 5, 0, 7); ctx.fill();
+    ctx.fillStyle = Cc.ink; ctx.font = '500 11.5px "Noto Sans JP", sans-serif'; ctx.fillText('横から見た図', x0 + 8, y0 + 16);
+    ctx.font = '500 11px "IBM Plex Mono", monospace';
+    ctx.fillText(`pan  ${(S.pan * 180 / Math.PI).toFixed(0).padStart(4)}°`, x0 + 118, y0 + 16);
+    ctx.fillText(`tilt ${(S.tilt * 180 / Math.PI).toFixed(0).padStart(4)}°`, x0 + 118, y0 + 31);
+    ctx.fillText(`高さ ${(S.toy.z * 100).toFixed(0).padStart(3)} cm`, x0 + 118, y0 + 46);
+  }
+  function drawBars() {
+    const { w, h, dpr } = BC; bx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    bx.fillStyle = Cc.panel; bx.fillRect(0, 0, w, h);
+    const Lm = 34, T = 10, B = 40, n = ARMS.length, cw = (w - Lm - 8) / n, Y = v => T + (1 - Math.min(v, 1.2) / 1.2) * (h - T - B);
+    bx.strokeStyle = Cc.line; bx.fillStyle = Cc.muted; bx.font = '11px "IBM Plex Mono", monospace';
+    for (const v of [0, 0.5, 1]) { bx.beginPath(); bx.moveTo(Lm, Y(v)); bx.lineTo(w - 8, Y(v)); bx.stroke(); bx.fillText(v.toFixed(1), 6, Y(v) + 4); }
+    const pick = mode() === 3 ? S.arm : null;
+    ARMS.forEach((a, i) => {
+      const b = S.bandit[a.id], x = Lm + i * cw + cw * 0.2, bw = cw * 0.6;
+      if (b.n > 1e-6) {
+        const mean = b.s / b.n; bx.fillStyle = a.color; bx.globalAlpha = a.id === pick ? 1 : 0.7; bx.fillRect(x, Y(mean), bw, Y(0) - Y(mean)); bx.globalAlpha = 1;
+        const u = ucb(a.id); if (isFinite(u)) { bx.strokeStyle = a.color; bx.lineWidth = 2; bx.beginPath(); bx.moveTo(x + bw / 2, Y(mean)); bx.lineTo(x + bw / 2, Y(u)); bx.moveTo(x + bw * 0.2, Y(u)); bx.lineTo(x + bw * 0.8, Y(u)); bx.stroke(); }
+      }
+      if ($('answer').checked) {
+        const tv = CATS[S.catId].pref[a.id] * (1 - S.cat.hab[a.id]);
+        bx.strokeStyle = Cc.warn; bx.lineWidth = 2; bx.setLineDash([4, 3]); bx.beginPath(); bx.moveTo(x - 4, Y(tv)); bx.lineTo(x + bw + 4, Y(tv)); bx.stroke(); bx.setLineDash([]);
+      }
+      bx.fillStyle = a.id === pick ? Cc.ink : Cc.muted; bx.font = `${a.id === pick ? 700 : 500} 12px "Noto Sans JP", sans-serif`;
+      bx.textAlign = 'center'; bx.fillText(a.name, x + bw / 2, h - 22); bx.font = '11px "IBM Plex Mono", monospace'; bx.fillText(`n=${b.plays}`, x + bw / 2, h - 7); bx.textAlign = 'left';
+    });
+    $('barsNote').textContent = $('answer').checked
+      ? `赤い点線 = テスト用の猫「${CATS[S.catId].name}」の本当の好み × (1 − いまの慣れ)(ロボットは知らない)。棒がこれに近づけば、観測から正しく学べている。`
+      : '「答え合わせ」をオンにすると、テスト用の猫の本当の好みが赤い点線で出ます。';
+  }
+  function drawChart() {
+    const { w, h, dpr } = CH; cx2.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cx2.fillStyle = Cc.panel; cx2.fillRect(0, 0, w, h);
+    const Lm = 34, Rm = 10, T = 10, B = 24, N = Math.max(30, S.history.length), X = i => Lm + (i + 0.5) / N * (w - Lm - Rm), Y = v => T + (1 - v) * (h - T - B);
+    cx2.strokeStyle = Cc.line; cx2.fillStyle = Cc.muted; cx2.font = '11px "IBM Plex Mono", monospace'; cx2.lineWidth = 1;
+    for (const v of [0, 0.5, 1]) { cx2.beginPath(); cx2.moveTo(Lm, Y(v)); cx2.lineTo(w - Rm, Y(v)); cx2.stroke(); cx2.fillText(v.toFixed(1), 6, Y(v) + 4); }
+    for (let i = 0; i < N; i += 10) cx2.fillText(`${i + 1}回`, X(i) - 8, h - 6);
+    S.history.forEach((e, i) => { cx2.fillStyle = ARMS.find(a => a.id === e.arm).color; cx2.beginPath(); cx2.arc(X(i), Y(e.r), 4, 0, 7); cx2.fill(); });
+    if (S.history.length > 1) {
+      cx2.strokeStyle = Cc.ink; cx2.lineWidth = 2; cx2.beginPath();
+      S.history.forEach((e, i) => { const a = S.history.slice(Math.max(0, i - 4), i + 1), m = a.reduce((x, y) => x + y.r, 0) / a.length; i ? cx2.lineTo(X(i), Y(m)) : cx2.moveTo(X(i), Y(m)); });
+      cx2.stroke();
+    }
+  }
+  const fmtT = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  function updateStats() {
+    $('sTime').textContent = fmtT(S.t); $('sTrial').textContent = S.trialN; $('sArm').textContent = ARMS.find(a => a.id === S.arm).name;
+    $('sLast').textContent = S.lastR === null ? '—' : S.lastR.toFixed(2); $('sDist').textContent = `${(S.dist || 0).toFixed(2)} m`; $('sPounce').textContent = S.pounces;
+    for (let k = 1; k <= 6; k++) $('c' + k).classList.toggle('active', S.card === k || (S.card === 5 && k <= 3));
+  }
+
+  // ---------- 操作 ----------
+  document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener('change', () => reset()));
+  $('catSel').addEventListener('change', () => reset());
+  $('answer').addEventListener('change', drawBars);
+  $('watching').addEventListener('change', () => say($('watching').checked ? '人が戻ってきたので、続けます。' : '<b>人が見ていないので止めました</b>。棒やおもちゃをかじって飲み込んでも、誰も気づけないからです。'));
+  $('bReset').onclick = () => reset();
+  $('bCompare').onclick = () => {
+    const keep = { m: mode(), c: $('catSel').value, w: $('watching').checked }, res = compare(40);
+    $('m' + keep.m).checked = true; $('catSel').value = keep.c; $('watching').checked = keep.w; reset();
+    say('40 回(約 13 分)の平均点 ─ ' + res.map(r => `${r.cat}: 左右に振る ${r.fixed.toFixed(2)} / ランダム ${r.random.toFixed(2)} / 学ぶ ${r.ucb.toFixed(2)}(一番多く選んだのは「${r.top}」)`).join('、 '));
+  };
+  function compare(trials) {
+    return Object.keys(CATS).map(id => {
+      const out = { cat: CATS[id].name };
+      for (const [k, m] of [['fixed', 1], ['random', 2], ['ucb', 3]]) {
+        let sum = 0, cnt = {};
+        for (const sd of [5, 11, 17]) { const r = simulate(trials * TRIAL, { mode: m, cat: id, seed: sd, watching: true }); sum += r.mean; if (m === 3) for (const a in r.plays) cnt[a] = (cnt[a] || 0) + r.plays[a]; }
+        out[k] = sum / 3;
+        if (m === 3) out.top = ARMS.find(a => a.id === Object.keys(cnt).reduce((x, y) => cnt[x] > cnt[y] ? x : y)).name;
+      }
+      return out;
+    });
+  }
+  function simulate(sec, opts = {}) {
+    if (opts.mode) $('m' + opts.mode).checked = true;
+    if (opts.cat) $('catSel').value = opts.cat;
+    if (opts.watching !== undefined) $('watching').checked = opts.watching;
+    reset(opts);
+    const n = Math.round(sec / DT);
+    for (let k = 0; k < n; k++) step();
+    const hs = S.history, plays = Object.fromEntries(ARMS.map(a => [a.id, S.bandit[a.id].plays]));
+    return { trials: hs.length, mean: hs.reduce((a, e) => a + e.r, 0) / Math.max(1, hs.length), last10: hs.slice(-10).reduce((a, e) => a + e.r, 0) / Math.max(1, Math.min(10, hs.length)), plays, pounces: S.pounces, history: hs };
+  }
+  window.__cat = { simulate, compare, state: () => S, step: n => { for (let k = 0; k < n; k++) step(); } };
+
+  readColors(); reset(); resize();
+  new ResizeObserver(resize).observe(cv); new ResizeObserver(resize).observe(ch); new ResizeObserver(resize).observe(bc);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+  let last = performance.now(), frame = 0, acc = 0;
+  function loop(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    acc = Math.min(acc + dt * +$('speed').value, 4);   // 1 フレームで足りない分は次のフレームに持ち越す
+    while (acc >= DT) { step(); acc -= DT; }
+    draw();
+    if (frame++ % 6 === 0) { updateStats(); drawChart(); drawBars(); }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

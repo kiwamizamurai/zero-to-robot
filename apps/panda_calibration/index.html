@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>カメラの取り付けがずれていたら？</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<script type="importmap">
+{ "imports": { "three": "../_web/vendor/three/three.module.js", "three/addons/": "../_web/vendor/three/" } }
+</script>
+<link rel="stylesheet" href="../_web/ui.css">
+<style>
+  .below { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; align-items: start; }
+  .below figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px; display: grid; gap: 6px; }
+  .below canvas { width: 100%; height: auto; display: block; border-radius: 8px; }
+  #cam { aspect-ratio: 1; image-rendering: pixelated; }
+  .below figcaption { font-size: 13px; color: var(--muted); }
+  .below h2 { margin: 0; font-family: var(--font-display); font-size: 15px; }
+  table.cmp { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.cmp th { text-align: left; font-weight: 500; color: var(--muted); padding: 3px 4px; border-bottom: 1px solid var(--line); }
+  table.cmp td { padding: 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.cmp td.num { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
+  .good { color: var(--ok); font-weight: 700; }
+  .badc { color: var(--bad); font-weight: 700; }
+  .seedrow { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
+  .seedrow input { width: 100%; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="../index.html">← サンプルアプリ一覧へ</a>
+    <h1>カメラの取り付けがずれていたら？</h1>
+    <p>天井カメラが設計図どおりの位置・向きに付いていないと、見つけたブロックの位置は机の上でずれてしまい、つかみ損ねます。ここでは本当のカメラを設計図から少しずらして付けておき、ロボット自身の動きを使ってカメラの位置と向きを測り直します(ハンドアイ・キャリブレーション)。手の横のマゼンタの球を動かして、「ロボットが知っている球の位置」と「カメラが見た球の位置」の組から、カメラの本当の位置・向きを逆算します。</p>
+  </header>
+  <div id="status" class="status">読み込み中…</div>
+  <div class="main" id="app" hidden>
+    <div class="stage"><canvas id="view"></canvas></div>
+    <aside class="panel">
+      <div class="row">
+        <button class="primary" id="play">スタート</button>
+        <button id="reset">最初から</button>
+      </div>
+      <div>
+        <label>速さ <input type="range" id="speed" min="0.5" max="4" step="0.5" value="2" oninput="document.getElementById('speedv').textContent=this.value+'x'"> <span class="mono" id="speedv">2x</span></label>
+      </div>
+      <div class="seedrow">
+        <label for="seed">置き方の番号</label>
+        <input type="number" id="seed" min="0" max="9999" step="1" value="0">
+        <button id="reseed">ランダム</button>
+      </div>
+      <div>
+        <label for="scale">カメラのずれ量 <span class="mono" id="scalev"></span></label>
+        <input type="range" id="scale" min="0" max="2" step="0.25" value="1">
+        <div class="note">1x は位置 3.7 cm・傾き 3.2°。0x ならずれなし。</div>
+      </div>
+      <div>
+        <h2>3 つの段階</h2>
+        <ul id="stages" class="stats"></ul>
+        <div class="note">シミュレーション時間: <span class="mono" id="time">0.0 秒</span></div>
+      </div>
+      <div id="done" class="result"></div>
+      <div>
+        <h2>ロボットの記録</h2>
+        <pre id="log" class="log"></pre>
+      </div>
+      <div class="legend">
+        <span><i style="background:#1f6fb2"></i>本当のカメラ</span>
+        <span><i style="background:#d9534f"></i>設計図のカメラ</span>
+        <span><i style="background:#2f8a4b"></i>測り直したカメラ</span>
+      </div>
+    </aside>
+  </div>
+  <div class="below" id="below" hidden>
+    <figure>
+      <h2 id="camtitle">天井カメラの画像</h2>
+      <canvas id="cam"></canvas>
+      <figcaption id="camcap">天井カメラの画像。キャリブレーションの間は、マゼンタの球(十字)が見えている点だけを使います。</figcaption>
+    </figure>
+    <figure>
+      <h2>A. 設計図を信じる</h2>
+      <canvas id="mapA"></canvas>
+    </figure>
+    <figure>
+      <h2>C. 測り直した値で見つける</h2>
+      <canvas id="mapC"></canvas>
+    </figure>
+  </div>
+  <div class="below" id="summary-wrap" hidden>
+    <figure style="grid-column: 1 / -1">
+      <h2>3 段階の比較</h2>
+      <table class="cmp">
+        <thead><tr><th>段階</th><th>やったこと</th><th>結果</th></tr></thead>
+        <tbody id="summary"></tbody>
+      </table>
+      <figcaption>図の見方: 四角が本当のブロックの位置、丸が「カメラがここにあると思った位置」、矢印がそのずれ(茶色の枠は箱)。A では 4 つとも同じ向きに大きくずれ、C では四角と丸がほぼ重なります。右の × は、キャリブレーションで球を動かした場所(高さ違いの 2 か所は重なって見えます)。</figcaption>
+    </figure>
+  </div>
+  <p class="note">元の Python 版(<span class="mono">calibrate.py</span>)との違い: OpenCV は使わず、画像から印とブロックを見つける部分は JavaScript の小さな実装です。3x3 の特異値分解(SVD)も自前(一側ヤコビ法)で、Kabsch 法はその上に載せています。カメラの画像は MuJoCo の光線(<span class="mono">mj_ray</span>)を画素ごとに飛ばして作ります。手先の角度の計算は mink ではなく減衰つき最小二乗法です。ずれ量の調整と置き方の番号は、この画面で足した操作です。</p>
+</div>
+<script type="module" src="view.js"></script>
+</body>
+</html>

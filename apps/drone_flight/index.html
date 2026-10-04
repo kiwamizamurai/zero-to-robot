@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ドローンを飛ばす(Skydio X2)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<script type="importmap">
+{ "imports": { "three": "../_web/vendor/three/three.module.js", "three/addons/": "../_web/vendor/three/" } }
+</script>
+<link rel="stylesheet" href="../_web/ui.css">
+<style>
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .big { font-family: var(--font-mono); font-size: 22px; }
+  .big small { font-size: 12px; color: var(--muted); }
+  .block { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px; }
+  .block h2 { font-family: var(--font-display); font-size: 15px; margin: 0 0 4px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 860px) { .grid3 { grid-template-columns: minmax(0, 1fr); } }
+  .grid3 canvas { width: 100%; height: auto; display: block; }
+  .result.bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="../index.html">← サンプルアプリ一覧へ</a>
+    <h1>ドローンを飛ばす(Skydio X2)</h1>
+    <p>ドローンが動かせるのは 4 つのプロペラの推力だけで、横向きの力は直接出せません。横に進むには、まず機体を傾けて推力を斜めにします。そこで制御を 3 段に重ねます(カスケード制御)。離陸して四角く巡回し、横からの突風に耐えて、元の場所に着陸します。ドラッグで視点を回せます。</p>
+  </header>
+  <div id="status" class="status">読み込み中…</div>
+  <div class="main" id="app" hidden>
+    <div class="stage"><canvas id="view"></canvas></div>
+    <aside class="panel">
+      <div class="row">
+        <button class="primary" id="play">スタート</button>
+        <button id="reset">最初から</button>
+      </div>
+      <div>
+        <h2>姿勢の制御</h2>
+        <div class="seg">
+          <button id="mode-normal" aria-pressed="true">普通の制御</button>
+          <button id="mode-weak" aria-pressed="false">弱くした版<br><span class="note">ゲイン(制御の強さ)1/10</span></button>
+        </div>
+        <div class="note" id="modenote"></div>
+      </div>
+      <div>
+        <label>速さ <input type="range" id="speed" min="0.5" max="4" step="0.5" value="1"> <span class="mono" id="speedv">1x</span></label>
+      </div>
+      <div>
+        <label>視点
+          <select id="cam"><option value="fixed">固定(ドラッグで回す)</option><option value="follow">ドローンを追う</option></select>
+        </label>
+      </div>
+      <div>
+        <h2>突風を起こす(5 N、1 秒)</h2>
+        <div class="row">
+          <select id="gustdir">
+            <option value="0,5,0">+y の向きへ押す</option><option value="0,-5,0">-y の向きへ押す</option>
+            <option value="5,0,0">+x の向きへ押す</option><option value="-5,0,0">-x の向きへ押す</option>
+          </select>
+          <button id="gust">突風!</button>
+        </div>
+        <div class="note">飛行ルートの 14 秒めにも、横から 5 N の突風が自動で吹きます。</div>
+      </div>
+      <div>
+        <h2>いまの状態</h2>
+        <div class="big"><span id="err">0.0</span> <small>cm 目標とのずれ</small></div>
+        <ul class="stats">
+          <li>高度<b id="alt">0.00 m</b></li>
+          <li>機体の傾き<b id="tilt">0.0°</b></li>
+          <li>シミュレーション時間<b id="time">0.0 秒</b></li>
+        </ul>
+      </div>
+      <div id="done" class="result"></div>
+      <ul id="summary" class="stats"></ul>
+    </aside>
+  </div>
+  <section class="block" id="charts" hidden>
+    <h2>飛行の記録</h2>
+    <div class="grid3">
+      <figure style="margin:0"><canvas id="c-alt"></canvas><figcaption class="note">高度 [m](破線が目標)</figcaption></figure>
+      <figure style="margin:0"><canvas id="c-tilt"></canvas><figcaption class="note">機体の傾き [°]。進むたびに傾く</figcaption></figure>
+      <figure style="margin:0"><canvas id="c-err"></canvas><figcaption class="note">目標の位置とのずれ [cm]</figcaption></figure>
+    </div>
+    <p class="note" style="margin:6px 0 0">横軸は時間 [秒]。14〜15 秒あたりの山が突風です。姿勢の制御を弱くした版では、揺れが育って墜落します。</p>
+  </section>
+  <p class="note">Python 版(<span class="mono">drone.py</span>)と同じ制御・ゲイン・飛行ルートです。違いは、MuJoCo Menagerie の機体モデルから見た目の表面の模様(テクスチャ)を省いて軽くしたことと、突風を好きな向きで起こせるボタンを足したことです。物理は同じです。</p>
+</div>
+<script type="module" src="view.js"></script>
+</body>
+</html>

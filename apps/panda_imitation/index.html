@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>お手本から学ぶ(模倣学習)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<script type="importmap">
+{ "imports": { "three": "../_web/vendor/three/three.module.js", "three/addons/": "../_web/vendor/three/" } }
+</script>
+<link rel="stylesheet" href="../_web/ui.css">
+<style>
+  select { width: 100%; }
+  .seedrow { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+  .seedrow input { width: 100%; box-sizing: border-box; }
+  .banner { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px; padding: 8px 12px; font-size: 14px; }
+  .block { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+  .block h2 { font-family: var(--font-display); font-size: 17px; margin: 0 0 6px; }
+  .block canvas { width: 100%; height: auto; display: block; }
+  table.res { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.res th, table.res td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; }
+  table.res th:first-child, table.res td:first-child, table.res th:nth-child(2), table.res td:nth-child(2) { text-align: left; }
+  .scroll { overflow-x: auto; }
+  .block ul { margin: 6px 0 0; padding-left: 1.3em; }
+  .block li { margin: 2px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="../index.html">← サンプルアプリ一覧へ</a>
+    <h1>お手本から学ぶ(模倣学習)</h1>
+    <p>これまでは「真上へ行く → 降りる → つかむ → …」という手順を人がプログラムに書いていました。ここではその手順書を「先生」にして、お手本をたくさん集め、ニューラルネット(脳のしくみをまねた関数)に真似させます(模倣学習、Behavior Cloning)。学習したネットは手順書を持たず、「いまの状態 → 次にどう動くか」だけを答えます。ドラッグで視点を回せます。</p>
+  </header>
+  <div class="banner">学習はこのブラウザの中ではなく、事前に済ませた結果(重みのファイル)を再生しています。</div>
+  <div id="status" class="status">読み込み中…</div>
+  <div class="main" id="app" hidden>
+    <div class="stage"><canvas id="view"></canvas></div>
+    <aside class="panel">
+      <div class="row">
+        <button class="primary" id="play">スタート</button>
+        <button id="reset">最初から</button>
+      </div>
+      <div>
+        <h2>だれが動かすか</h2>
+        <select id="policy" aria-label="動かす方策"></select>
+        <div class="note" id="policynote"></div>
+      </div>
+      <div>
+        <h2>ブロックの置き方</h2>
+        <div class="seedrow">
+          <label>番号(seed) <input type="number" id="seed" min="0" max="999999" step="1" value="2"></label>
+          <button id="shuffle">ランダム</button>
+        </div>
+        <div class="note">番号を変えると、ブロックの位置と向きが変わります。同じ番号なら同じ置き方です。</div>
+      </div>
+      <div>
+        <label>速さ <input type="range" id="speed" min="0.5" max="4" step="0.5" value="1"> <span class="mono" id="speedv">1x</span></label>
+      </div>
+      <div>
+        <h2>いまの指令</h2>
+        <ul class="stats">
+          <li>手先の動き(0.02 秒あたり)<b class="mono" id="cmd">-</b></li>
+          <li>指<b class="mono" id="grip">-</b></li>
+          <li>ブロック<b id="blockstate">-</b></li>
+        </ul>
+        <div class="note">経過時間: <span class="mono" id="time">0.0 秒</span>(1 回 10 秒で打ち切り)</div>
+      </div>
+      <div id="done" class="result"></div>
+      <p class="note">ネットは 0.02 秒ごとに「手先をどれだけ動かすか・手首をどれだけ回すか・指を閉じるか」の 5 つの数だけを答えています。先生(手順書)を選ぶと、お手本を作った側の動きを見られます。</p>
+    </aside>
+  </div>
+  <section class="block" id="evalsec" hidden>
+    <h2>この方策を、別の置き方 20 通りで試す</h2>
+    <p class="note">いま選んでいる方策で、番号 5000 から 20 通りの置き方を 10 秒ずつ片付けさせます(画面には出さず、ブラウザの中で速く回します。十数秒かかります)。</p>
+    <div class="row"><button id="evalbtn">試す</button><span class="mono" id="evalout"></span></div>
+  </section>
+  <section class="block" id="chartsec" hidden>
+    <h2>お手本の数と成功率</h2>
+    <canvas id="chart"></canvas>
+    <p class="note" id="chartnote"></p>
+    <div class="scroll"><table class="res" id="table"></table></div>
+  </section>
+  <section class="block">
+    <h2>見どころ</h2>
+    <ul>
+      <li><b>お手本の量</b>: 10 回、25 回、50 回では一度も成功しません。100 回で少し、200 回でようやく半分以上。どれくらい集めれば足りるかは、やってみないと分かりません。</li>
+      <li><b>揺れを混ぜる効果(DART)</b>: 先生がいつも完璧な道を通ると、ネットは「道から少し外れたときにどう戻るか」を一度も見ていません。ネットの動きが少しずれると、見たことのない状態に入って崩れます(covariate shift、「見たことのない状態へのずれ」)。お手本を集めるとき先生の手先をわざと数 mm 揺らし、「外れた状態からの正しい指令」も記録しておくと強くなります。</li>
+      <li><b>データの作り方のコツ</b>: 先生の指の開け閉めは時刻ではなく「手が実際にその高さまで下りたか」で決めています。時刻で決めると、直前と直後で状態がほぼ同じなのに指令だけが違い、真似する側が迷って止まってしまうからです。指令は「いまからどれだけ動くか」の形にしています。</li>
+      <li>はなしたあとに手を上げる動きは、ネットは学べていません(先生の手順は約 8 秒で終わり、残りの時間のお手本がないため)。</li>
+    </ul>
+  </section>
+  <section class="block">
+    <h2>元の Python 版(imitation.py)との違い</h2>
+    <ul>
+      <li><b>学習のしくみ</b>: Python 版は PyTorch、こちらは自前で書いた MLP(全結合のニューラルネット)と Adam(重みの更新法)。構造は「12 個の状態 → 隠れ 3 層 → 5 個の指令」で同じですが、隠れ層は 256 ではなく 128 個に小さくし、1 回に使うデータも 512 組ではなく 256 組にしました。ブラウザで配れる大きさと、Node で数分で学習が終わる速さを優先したためです。</li>
+      <li><b>学習はブラウザの外</b>: <span class="mono">tools/train.mjs</span> を Node で動かして、お手本集め・学習・評価を済ませています。画面は結果の再生だけです(約 5〜6 分、CPU 10 コアで並列)。</li>
+      <li><b>角度の計算</b>: Python 版は mink(逆運動学のライブラリ)、こちらは減衰つき最小二乗法の自前の実装。ほかのブラウザ版 Panda アプリと同じです。物理は MuJoCo を WebAssembly で動かしています。</li>
+      <li><b>お手本の数と評価</b>: お手本は 10 / 25 / 50 / 100 / 200 回(Python 版は 10 / 50 / 200 回)。評価は学習に使わない 100 通りの置き方(Python 版は 50 通り)。</li>
+      <li><b>学習のぶれ</b>: 同じお手本でも、学習の乱数(初期値と取り出す順)が違うと成功率が大きく変わります(200 回・揺れありで 55%、63%、84% など)。そこで表の成功率は、乱数を変えた 3 回の学習の平均です。画面で動かす方策は、3 回のうち平均にいちばん近かった 1 つです。揺れの有無の差も、このぶれと同じくらいの大きさなので、傾向としては見えるものの、はっきり証明できる差ではありません。</li>
+      <li><b>数値</b>: Python 版の README(200 回で 80%、揺れなし 56%)とは細かい数字が一致しません。物理計算の違いもあり、傾向(お手本が多いほど上がる、揺れを混ぜたほうが高い)が同じかどうかを見てください。</li>
+    </ul>
+  </section>
+</div>
+<script type="module" src="view.js"></script>
+</body>
+</html>

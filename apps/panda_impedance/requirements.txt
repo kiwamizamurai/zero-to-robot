@@ -1,0 +1,3 @@
+-r ../panda_pick_place/requirements.txt
+matplotlib
+opencv-python-headless

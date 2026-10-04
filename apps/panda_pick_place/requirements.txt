@@ -1,0 +1,5 @@
+mujoco
+mink
+daqp
+robot_descriptions
+imageio[ffmpeg]

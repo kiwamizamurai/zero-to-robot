@@ -1,0 +1,63 @@
+/* 全アプリ共通の見た目。既存の HTML アプリ(tidy_arm など)と同じ配色・フォント。 */
+:root {
+  --bg: #f3f1ec; --panel: #fffdf8; --ink: #26292b; --muted: #6b6f70; --line: #dcd8cf; --accent: #1f6fb2; --ok: #2f8a4b; --bad: #c0392b;
+  --font-display: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Noto Sans JP", sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b; --accent: #6fb0ea; --ok: #5cc07a; --bad: #e57368; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 22px 16px 44px; display: grid; gap: 18px; }
+header h1 { font-family: var(--font-display); font-weight: 800; font-size: 28px; margin: 0; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 70ch; }
+.back { display: inline-block; padding: 11px 0; font-size: 13px; color: var(--muted); text-decoration: none; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+@media (max-width: 860px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.stage { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: grid; }
+.stage canvas { display: block; width: 100%; aspect-ratio: 4 / 3; touch-action: none; }
+.panel { display: grid; gap: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.panel h2 { font-family: var(--font-display); font-size: 15px; margin: 0 0 4px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button { font: inherit; font-size: 14px; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+label { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+select, input[type=number] { font: inherit; font-size: 14px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+input[type=range] { width: 100%; }
+ul.stats { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+ul.stats li { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+ul.stats li b { margin-left: auto; font-weight: 500; color: var(--muted); }
+ul.stats li b.ok { color: var(--ok); }
+ul.stats li b.bad { color: var(--bad); }
+.dot { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.log { margin: 0; font: 12px/1.6 var(--font-mono); white-space: pre-wrap; max-height: 170px; overflow: auto; color: var(--muted); }
+.status { padding: 40px 16px; text-align: center; color: var(--muted); }
+.status.error { color: var(--bad); }
+.result { font-weight: 700; color: var(--ok); min-height: 1.7em; }
+.mono { font-family: var(--font-mono); }
+.note { font-size: 13px; color: var(--muted); }
+.charts { display: grid; gap: 12px; }
+.charts figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px; }
+.charts figcaption { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.charts canvas { width: 100%; height: auto; display: block; }
+
+/* スマホ(縦持ち)向け: 余白を詰め、指で押しやすい大きさにし、3D 画面を正方形に近づけて指で回しやすくする */
+html { -webkit-text-size-adjust: 100%; }
+@media (max-width: 600px) {
+  .wrap { padding: 14px 12px 32px; gap: 14px; }
+  header h1 { font-size: 22px; line-height: 1.35; }
+  header p { font-size: 14px; line-height: 1.65; }
+  .panel { padding: 12px; gap: 12px; }
+  .row { gap: 10px; }
+  button, select, input[type=number] { min-height: 44px; }
+  input[type=range] { height: 32px; }
+  label { min-height: 32px; }
+  .stage canvas { aspect-ratio: 1 / 1; }
+  .charts figure { padding: 8px; }
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table th, table td { min-width: 96px; vertical-align: top; }
+}

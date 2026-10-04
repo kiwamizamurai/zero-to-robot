@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>倒れない二輪ロボット</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+/* Layout: 床を横から見た実験場を大きく、その下に「1秒に100回まわるループ」3枚、右に操作 */
+:root {
+  --bg: #f3f1ec;
+  --panel: #fffdf8;
+  --ink: #26292b;
+  --muted: #6b6f70;
+  --line: #dcd8cf;
+  --wall: #eae6dd;
+  --floor: #b88a5a;
+  --floor-dark: #94693d;
+  --metal: #3d4a55;
+  --metal-light: #7e8f9c;
+  --body: #e9eef2;
+  --joint: #f2b233;
+  --accent: #1f6fb2;
+  --accent-soft: #e1ecf6;
+  --force: #d9542f;
+  --flag: #3aa55d;
+  --font-display: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Noto Sans JP", sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b; --wall: #1b1f23;
+    --floor: #8a653f; --floor-dark: #6b4b2c; --metal: #b9c6d0; --metal-light: #71818d; --body: #2c343b; --joint: #f2b233;
+    --accent: #6fb0ea; --accent-soft: #1d2e3e; --force: #f07b52; --flag: #6cc47e; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b; --wall: #1b1f23;
+  --floor: #8a653f; --floor-dark: #6b4b2c; --metal: #b9c6d0; --metal-light: #71818d; --body: #2c343b; --joint: #f2b233;
+  --accent: #6fb0ea; --accent-soft: #1d2e3e; --force: #f07b52; --flag: #6cc47e; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 22px 16px 44px; display: grid; gap: 18px; }
+header h1 { font-family: var(--font-display); font-weight: 800; font-size: 28px; margin: 0; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 64ch; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
+@media (max-width: 860px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.stage { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; position: relative; }
+#sim { display: block; width: 100%; aspect-ratio: 16 / 9; max-width: 100%; touch-action: none; }
+.say { position: absolute; left: 12px; right: 12px; top: 10px; pointer-events: none; }
+.say p { margin: 0; display: inline-block; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; font-size: 14px; line-height: 1.55; box-shadow: 0 2px 8px rgba(0,0,0,.06); max-width: 60ch; }
+.say p b { color: var(--accent); }
+.panel { display: grid; gap: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--bg); border-radius: 10px; padding: 3px; gap: 3px; }
+.tabs button { border: 0; background: transparent; padding: 7px; border-radius: 8px; font-weight: 500; }
+.tabs button[aria-selected="true"] { background: var(--panel); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+button { font: inherit; font-size: 14px; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.big { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 700; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stack { display: grid; gap: 10px; }
+.note { font-size: 13px; color: var(--muted); line-height: 1.6; margin: 0; }
+.slider { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; align-items: center; }
+.slider .v { font-family: var(--font-mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+.slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+.slider small { grid-column: 1 / -1; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.pad { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pad button { font-size: 18px; font-weight: 700; padding: 18px 8px; user-select: none; -webkit-user-select: none; touch-action: none; }
+.pad button.held { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+.score { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.score div { background: var(--bg); border-radius: 10px; padding: 8px 10px; display: grid; }
+.score b { font-weight: 400; font-size: 12px; color: var(--muted); }
+.score span { font-family: var(--font-mono); font-size: 20px; font-variant-numeric: tabular-nums; }
+.row { display: flex; gap: 10px; align-items: center; font-size: 14px; flex-wrap: wrap; }
+select { font: inherit; font-size: 14px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+h2 { font-family: var(--font-display); font-weight: 800; font-size: 19px; margin: 0 0 4px; }
+.loop-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 10px; }
+.loop-head p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.loop { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; list-style: none; padding: 0; margin: 0; }
+@media (max-width: 720px) { .loop { grid-template-columns: minmax(0, 1fr); } }
+.loop li { background: var(--panel); border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; align-content: start; min-width: 0; }
+.loop li .n { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
+.loop li strong { font-family: var(--font-display); font-size: 17px; }
+.loop li .d { font-size: 13px; color: var(--muted); line-height: 1.55; }
+.loop li .live { font-family: var(--font-mono); font-size: 14px; background: var(--bg); border-radius: 8px; padding: 6px 10px; font-variant-numeric: tabular-nums; min-height: 2.6em; }
+.bar { height: 8px; background: var(--bg); border-radius: 4px; position: relative; overflow: hidden; }
+.bar i { position: absolute; top: 0; bottom: 0; background: var(--force); border-radius: 4px; }
+.bar::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--muted); }
+.real { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 860px) { .real { grid-template-columns: minmax(0, 1fr); } }
+.real section { min-width: 0; }
+.real h2 { margin-bottom: 10px; }
+.real ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 500; }
+td.dir { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; color: var(--muted); }
+@media (max-width: 600px) { select, button { min-height: 44px; } .wrap { padding-left: 12px; padding-right: 12px; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <a href="../index.html" style="display:inline-block;padding:11px 0;font-size:13px;color:var(--muted);text-decoration:none">← サンプルアプリ一覧へ</a>
+    <h1>倒れない二輪ロボット</h1>
+    <p>車輪 2 つだけで立っているロボットです。何もしなければすぐ倒れますが、1 秒に 100 回「どっちに傾いているか」を測って車輪を動かし、倒れずに立ち続けます。押したり、センサーを遅くしたりして試してください。</p>
+  </header>
+
+  <div class="main">
+    <div class="stage">
+      <canvas id="sim" aria-label="二輪ロボットが倒れないようにバランスをとる様子。床をクリックするとそこへ移動する"></canvas>
+      <div class="say"><p id="say"></p></div>
+    </div>
+
+    <aside class="panel">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tAuto" aria-selected="true">まかせる</button>
+        <button role="tab" id="tHand" aria-selected="false">自分で立たせる</button>
+      </div>
+
+      <div id="pAuto" class="stack">
+        <div class="two">
+          <button id="bPushL">← 押す</button>
+          <button id="bPushR">押す →</button>
+        </div>
+        <button id="bStrong">思いきり押す</button>
+        <p class="note">床をクリックすると、そこまで移動します。動き出す瞬間をよく見てください。</p>
+        <div class="slider"><label for="gain">反応の強さ</label><span class="v" id="gainV"></span>
+          <input type="range" id="gain" min="0.1" max="2" step="0.05" value="1">
+          <small>弱くしすぎると、傾きを戻しきれずに倒れる。</small></div>
+        <div class="slider"><label for="delay">センサーの遅れ</label><span class="v" id="delayV"></span>
+          <input type="range" id="delay" min="0" max="150" step="5" value="0">
+          <small>傾きが分かるまでの時間。本物のロボットには必ずある。</small></div>
+        <button class="big" id="bUp">起こしてリセット</button>
+      </div>
+
+      <div id="pHand" class="stack" hidden>
+        <p class="note">ロボットの頭脳を切りました。ボタンを押している間だけ車輪が回ります(キーボードの ← → でも操作できます)。</p>
+        <div class="pad">
+          <button id="hL" aria-label="左へ走る">◀ 左へ</button>
+          <button id="hR" aria-label="右へ走る">右へ ▶</button>
+        </div>
+        <div class="score">
+          <div><b>立っていた時間</b><span id="tNow">0.0 秒</span></div>
+          <div><b>ベスト</b><span id="tBest">—</span></div>
+        </div>
+        <div class="row"><label for="hs">スピード</label>
+          <select id="hs"><option value="0.2">1/5(かんたん)</option><option value="0.35" selected>1/3</option><option value="0.6">1/2</option><option value="1">本物の速さ</option></select>
+        </div>
+        <button class="big" id="bRetry">もう一回</button>
+        <p class="note">コツは「倒れそうな方向へ車輪を走らせて、体の下に潜り込む」。手のひらにほうきを立てるときと同じです。</p>
+      </div>
+    </aside>
+  </div>
+
+  <div>
+    <div class="loop-head"><h2>ロボットの頭の中</h2><p>この 3 つを 1 秒に 100 回くりかえしている</p></div>
+    <ol class="loop">
+      <li><span class="n">1</span><strong>測る</strong><span class="d">センサーで、体がどっちに何度傾いているか、どれくらいの速さで倒れかけているかを測る</span><span class="live" id="l1"></span></li>
+      <li><span class="n">2</span><strong>決める</strong><span class="d">傾き・傾く速さ・目標地点までの距離・自分の速さの 4 つに重みをかけて足し、車輪を押す力を決める</span><span class="live" id="l2"></span></li>
+      <li><span class="n">3</span><strong>車輪を回す</strong><span class="d">決めた力でモーターを回す。倒れる側へ車輪を走らせると、体が起き上がる</span><span class="live" id="l3"></span><span class="bar"><i id="fbar"></i></span></li>
+    </ol>
+  </div>
+
+  <div class="real">
+    <section>
+      <h2>本物のロボットでは</h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>ステップ</th><th>本物ではこうする</th><th>このリポジトリ</th></tr></thead>
+          <tbody>
+            <tr><td>測る</td><td>ジャイロと加速度センサー(IMU)で測る。どちらもノイズやずれがあるので、2 つを混ぜて本当の傾きを推定する(カルマンフィルタなど)</td><td class="dir">04_estimation</td></tr>
+            <tr><td>決める</td><td>4 つの重みは、ロボットの運動方程式から計算しておく(LQR という方法)。PID 制御で作ることも多い</td><td class="dir">02_dynamics<br>03_control</td></tr>
+            <tr><td>車輪を回す</td><td>モーターに流す電流を変える。出せる力には上限があるので、強く押されすぎると立て直せない</td><td class="dir">03_control</td></tr>
+            <tr><td>遅れ</td><td>センサー・計算・通信には必ず遅れがある。シミュレーションで立てても、実機で倒れる原因の代表</td><td class="dir">07 (予定)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section>
+      <h2>同じしくみで動いているもの</h2>
+      <ul>
+        <li>セグウェイや電動一輪車(乗っている人ごとバランスをとる)</li>
+        <li>ドローン(放っておくとひっくり返るので、1 秒に数百回姿勢を直している)</li>
+        <li>二足歩行ロボット(片足で立つ瞬間は、この二輪ロボットと同じ状態)</li>
+        <li>ロケットの垂直着陸(細長い機体を立てたまま降ろす)</li>
+      </ul>
+      <p class="note" style="margin-top:10px">どれも「測る → 決める → 動かす」を高速でくりかえしています。これがフィードバック制御です。止まっているように見えても、ずっと小さく動いて立て直し続けています。</p>
+    </section>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---------- モデル(02_dynamics): 車輪(台車)の上に立つ棒 ----------
+  // x: 車輪の位置 [m], th: 真上からの傾き [rad](右に傾くと +)
+  const Mw = 0.6, m = 1.2, l = 0.35, R = 0.1, b = 0.3, g = 9.81;
+  const I = m * (2 * l) ** 2 / 12;
+  const FMAX = 25, DT = 0.001, CTRL_DT = 0.01, XLIM = 1.55, FALL = 1.42;
+  // LQR で求めた重み(Q = diag(20, 2, 40, 1), R = 0.5): F = -K (状態 - 目標)
+  const K = [-6.32, -7.82, -58.33, -10.54];
+  const HAND_F = 9;
+  const $ = id => document.getElementById(id);
+  const deg = r => r * 180 / Math.PI;
+
+  function accel(s, F) {
+    const [, v, th, w] = s, c = Math.cos(th), sn = Math.sin(th);
+    const a11 = Mw + m, a12 = m * l * c, a22 = I + m * l * l;
+    const r1 = F - b * v + m * l * w * w * sn, r2 = m * g * l * sn;
+    const det = a11 * a22 - a12 * a12;
+    return [v, (a22 * r1 - a12 * r2) / det, w, (a11 * r2 - a12 * r1) / det];
+  }
+
+  let S, F, xRef, fallen, sensed, buf, ctrlT, mode = 'auto', held = 0, standT, best = null, lastMsgT = 0, pushInfo = null;
+  function reset(tilt = 0.0) {
+    S = [0, 0, tilt, 0]; F = 0; xRef = 0; fallen = false; buf = []; ctrlT = 0; standT = 0; pushInfo = null;
+    sensed = S.slice();
+  }
+
+  function say(html) { $('say').innerHTML = html; }
+  const gain = () => +$('gain').value, delay = () => +$('delay').value / 1000;
+
+  // ---------- 1. 測る ----------
+  function measure() {
+    const d = Math.round(delay() / DT);
+    const s = buf.length ? buf[Math.max(0, buf.length - 1 - d)] : S;
+    const noise = () => (Math.random() - 0.5) * 0.004;
+    sensed = [s[0], s[1], s[2] + noise(), s[3] + noise() * 5];
+  }
+  // ---------- 2. 決める ----------
+  function decide() {
+    if (fallen) return 0;
+    if (mode === 'hand') return held * HAND_F;
+    const e = [sensed[0] - xRef, sensed[1], sensed[2], sensed[3]];
+    let f = 0; for (let i = 0; i < 4; i++) f -= gain() * K[i] * e[i];
+    return Math.max(-FMAX, Math.min(FMAX, f));
+  }
+
+  function step() {
+    buf.push(S.slice()); if (buf.length > 400) buf.shift();
+    ctrlT += DT;
+    if (ctrlT >= CTRL_DT - 1e-9) { ctrlT = 0; measure(); F = decide(); }
+    if (fallen) { S[1] *= 0.97; S[0] += S[1] * DT; return; }
+    const f = s => accel(s, F), add = (a, k, h) => a.map((v, i) => v + k[i] * h);
+    const k1 = f(S), k2 = f(add(S, k1, DT / 2)), k3 = f(add(S, k2, DT / 2)), k4 = f(add(S, k3, DT));
+    S = S.map((v, i) => v + DT / 6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]));
+    if (S[0] > XLIM) { S[0] = XLIM; S[1] = Math.min(0, S[1]); }
+    if (S[0] < -XLIM) { S[0] = -XLIM; S[1] = Math.max(0, S[1]); }
+    if (Math.abs(S[2]) > FALL) { S[2] = Math.sign(S[2]) * FALL; S[3] = 0; fallen = true; F = 0; onFall(); }
+  }
+
+  function onFall() {
+    if (mode === 'hand') {
+      const t = standT;
+      if (best === null || t > best) best = t;
+      $('tBest').textContent = best.toFixed(1) + ' 秒';
+      say(`倒れた! <b>${t.toFixed(1)} 秒</b>。人間の反応は 0.2 秒くらいかかるので、本物の速さではまず無理。ロボットは 0.01 秒ごとに判断している。`);
+      return;
+    }
+    if (gain() < 0.45) say('倒れた。<b>反応が弱すぎて</b>、傾きを戻すだけの力を出せなかった。「起こしてリセット」で起こせます。');
+    else if (delay() >= 0.08) say(`倒れた。センサーが <b>${Math.round(delay() * 1000)} ミリ秒遅れて</b>いたので、古い傾きを見て動き、揺れがどんどん大きくなった。`);
+    else if (pushInfo) say('倒れた。押す力が強すぎて、<b>モーターの力の上限</b>では立て直せなかった。');
+    else say('倒れた。「起こしてリセット」で起こせます。');
+  }
+
+  // ---------- 描画 ----------
+  const cv = $('sim'), ctx = cv.getContext('2d');
+  let C = {}, V = {};
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of ['bg', 'panel', 'ink', 'muted', 'line', 'wall', 'floor', 'floor-dark', 'metal', 'metal-light', 'body', 'joint', 'accent', 'force', 'flag'])
+      C[k] = cs.getPropertyValue('--' + k).trim();
+  }
+  function resize() {
+    const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    const s = Math.min(r.width / 3.8, r.height / 1.3);
+    V = { s, ox: r.width / 2, oy: r.height - 0.18 * s, w: r.width, h: r.height, dpr };
+  }
+  const P = (x, y) => [V.ox + x * V.s, V.oy - y * V.s];
+  const Wx = px => (px - V.ox) / V.s;
+
+  function arrow(x0, y0, x1, y1, color, width) {
+    const a = Math.atan2(y1 - y0, x1 - x0), h = 6 + width * 1.5;
+    ctx.save(); ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1 - Math.cos(a) * h * 0.6, y1 - Math.sin(a) * h * 0.6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 - h * Math.cos(a - 0.45), y1 - h * Math.sin(a - 0.45));
+    ctx.lineTo(x1 - h * Math.cos(a + 0.45), y1 - h * Math.sin(a + 0.45)); ctx.fill(); ctx.restore();
+  }
+
+  function draw(now) {
+    const { w, h, dpr, s } = V;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = C.wall; ctx.fillRect(0, 0, w, h);
+    // 床と目盛り(0.5 m ごと)
+    const f0 = P(0, 0);
+    ctx.fillStyle = C.floor; ctx.fillRect(0, f0[1], w, 0.03 * s);
+    ctx.fillStyle = C['floor-dark']; ctx.fillRect(0, f0[1] + 0.03 * s, w, h);
+    ctx.font = `500 ${Math.max(10, s * 0.045)}px "IBM Plex Mono", monospace`;
+    ctx.fillStyle = C.panel; ctx.globalAlpha = 0.75;
+    for (let x = -1.5; x <= 1.51; x += 0.5) { const p = P(x, 0); ctx.fillRect(p[0] - 0.5, p[1], 1, 0.03 * s); ctx.fillText(`${x.toFixed(1)} m`, p[0] + 3, p[1] + 0.1 * s); }
+    ctx.globalAlpha = 1;
+    // 壁
+    ctx.fillStyle = C.line;
+    for (const sx of [-1, 1]) { const p = P(sx * (XLIM + R + 0.02), 0.5); ctx.fillRect(p[0] - (sx > 0 ? 0 : 0.04 * s), p[1], 0.04 * s, 0.5 * s); }
+    // 目標の旗
+    if (mode === 'auto') {
+      const p = P(xRef, 0);
+      ctx.strokeStyle = C.flag; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[0], p[1] - 0.28 * s); ctx.stroke();
+      ctx.fillStyle = C.flag; ctx.beginPath(); ctx.moveTo(p[0], p[1] - 0.28 * s); ctx.lineTo(p[0] + 0.12 * s, p[1] - 0.24 * s); ctx.lineTo(p[0], p[1] - 0.2 * s); ctx.fill();
+    }
+    const [x, , th] = S;
+    const ax = P(x, R);
+    // 真上の線と傾きの角度
+    ctx.save(); ctx.strokeStyle = C.muted; ctx.setLineDash([4, 5]); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(ax[0], ax[1]); ctx.lineTo(ax[0], ax[1] - 0.95 * s); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.strokeStyle = C.joint; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(ax[0], ax[1], 0.42 * s, -Math.PI / 2, -Math.PI / 2 + th, th < 0); ctx.stroke(); ctx.restore();
+    const lbl = `傾き ${deg(th) >= 0 ? '+' : ''}${deg(th).toFixed(1)}°`;
+    ctx.font = `500 ${Math.max(12, s * 0.05)}px "Noto Sans JP", sans-serif`;
+    const lx = ax[0] + (th >= 0 ? -1 : 1) * 0.08 * s - (th >= 0 ? ctx.measureText(lbl).width : 0), ly = ax[1] - 0.98 * s;
+    ctx.fillStyle = C.ink; ctx.fillText(lbl, lx, ly);
+    // 体
+    ctx.save(); ctx.translate(ax[0], ax[1]); ctx.rotate(th);
+    const bw = 0.16 * s, bh = 2 * l * s;
+    ctx.fillStyle = C.body; ctx.strokeStyle = C.metal; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.roundRect(-bw / 2, -bh, bw, bh, 0.04 * s); ctx.fill(); ctx.stroke();
+    // 胸のセンサー(IMU)
+    ctx.fillStyle = C.accent; ctx.beginPath(); ctx.roundRect(-0.035 * s, -bh * 0.55, 0.07 * s, 0.05 * s, 0.01 * s); ctx.fill();
+    // 頭
+    const hr = 0.085 * s;
+    ctx.fillStyle = C.body; ctx.beginPath(); ctx.arc(0, -bh - hr * 0.8, hr, 0, 7); ctx.fill(); ctx.stroke();
+    const look = Math.max(-1, Math.min(1, S[1] * 1.5)) * hr * 0.3;
+    ctx.fillStyle = C.metal;
+    for (const ex of [-0.35, 0.35]) { ctx.beginPath(); ctx.arc(ex * hr + look, -bh - hr * 0.85, hr * (fallen ? 0.08 : 0.15), 0, 7); ctx.fill(); }
+    ctx.restore();
+    // 車輪(スポークで回転が見える)
+    const wa = x / R;
+    ctx.save(); ctx.translate(ax[0], ax[1]);
+    ctx.fillStyle = C.metal; ctx.beginPath(); ctx.arc(0, 0, R * s, 0, 7); ctx.fill();
+    ctx.strokeStyle = C['metal-light']; ctx.lineWidth = 2;
+    for (let k = 0; k < 3; k++) { const a = wa + k * Math.PI / 3; ctx.beginPath(); ctx.moveTo(-Math.cos(a) * R * s * 0.8, -Math.sin(a) * R * s * 0.8); ctx.lineTo(Math.cos(a) * R * s * 0.8, Math.sin(a) * R * s * 0.8); ctx.stroke(); }
+    ctx.fillStyle = C.joint; ctx.beginPath(); ctx.arc(0, 0, R * s * 0.25, 0, 7); ctx.fill();
+    ctx.restore();
+    // 車輪を押す力の矢印
+    if (Math.abs(F) > 0.3) {
+      const len = Math.sign(F) * Math.min(1, Math.abs(F) / FMAX) * 0.45 * s;
+      const y = ax[1] + R * s + 0.07 * s;
+      arrow(ax[0], y, ax[0] + len, y, C.force, 4);
+    }
+    // 押された印
+    if (pushInfo && now - pushInfo.at < 450) {
+      const top = [ax[0] + Math.sin(th) * (bh * 0.8) , ax[1] - Math.cos(th) * (bh * 0.8)];
+      const d = pushInfo.dir;
+      arrow(top[0] - d * 0.35 * s, top[1], top[0] - d * 0.1 * s, top[1], C.accent, 5);
+    }
+  }
+
+  // ---------- 頭の中の表示 ----------
+  function updateLoop() {
+    const [, , th, w] = sensed;
+    const dg = deg(th), dw = deg(w);
+    $('l1').textContent = `傾き ${dg >= 0 ? '+' : ''}${dg.toFixed(1)}°   倒れる速さ ${dw >= 0 ? '+' : ''}${dw.toFixed(0)}°/秒`;
+    let judge;
+    if (fallen) judge = '倒れている。何もできない';
+    else if (mode === 'hand') judge = 'あなたが決めている';
+    else {
+      const lean = th + w * 0.12;
+      const dist = xRef - S[0];
+      if (Math.abs(lean) > 0.02) judge = `${lean > 0 ? '右' : '左'}に倒れそう → ${lean > 0 ? '右' : '左'}へ潜り込む`;
+      else if (Math.abs(dist) > 0.05) judge = `目標まで ${Math.abs(dist).toFixed(2)} m ${dist > 0 ? '右' : '左'}`;
+      else judge = 'ほぼまっすぐ → 小さく調整';
+    }
+    $('l2').textContent = judge;
+    const fTxt = Math.abs(F) < 0.05 ? '0.0 N' : `${F > 0 ? '右' : '左'}へ ${Math.abs(F).toFixed(1)} N`;
+    $('l3').textContent = `車輪を押す力 ${fTxt}${Math.abs(F) >= FMAX - 0.01 ? '(上限)' : ''}`;
+    const r = Math.min(1, Math.abs(F) / FMAX) * 50;
+    const bar = $('fbar'); bar.style.left = (F >= 0 ? 50 : 50 - r) + '%'; bar.style.width = r + '%';
+    if (mode === 'hand') $('tNow').textContent = standT.toFixed(1) + ' 秒';
+  }
+
+  // ---------- 入力 ----------
+  function push(dir, strength) {
+    if (fallen || mode !== 'auto') return;
+    S[3] += dir * strength; pushInfo = { dir, at: performance.now() };
+    say(strength > 3 ? '思いきり押した! 倒れる方向へ全力で車輪を走らせて、体の下に潜り込む。' : `押された! <b>倒れる方向(${dir > 0 ? '右' : '左'})へ車輪を走らせて</b>、体の下に潜り込んで起き上がる。`);
+  }
+  $('bPushL').onclick = () => push(-1, 1.6);
+  $('bPushR').onclick = () => push(1, 1.6);
+  $('bStrong').onclick = () => push(Math.random() < 0.5 ? -1 : 1, 3.8);
+  $('bUp').onclick = () => { reset(); say('起き上がった。また 1 秒に 100 回、傾きを測って車輪を動かしている。'); };
+
+  cv.addEventListener('pointerdown', e => {
+    if (mode !== 'auto' || fallen) return;
+    const r = cv.getBoundingClientRect();
+    const x = Math.max(-XLIM + 0.1, Math.min(XLIM - 0.1, Wx(e.clientX - r.left)));
+    const dir = x > S[0] ? '右' : '左', back = x > S[0] ? '左' : '右';
+    xRef = x; pushInfo = null;
+    say(`${dir}へ行くには、まず少し<b>${back}へ下がって</b>、体を${dir}に傾ける。傾かないまま走り出すと、後ろに倒れてしまうから。`);
+  });
+
+  function setHeld(v) {
+    held = v;
+    $('hL').classList.toggle('held', v < 0); $('hR').classList.toggle('held', v > 0);
+  }
+  for (const [id, v] of [['hL', -1], ['hR', 1]]) {
+    const el = $(id);
+    el.addEventListener('pointerdown', e => { e.preventDefault(); el.setPointerCapture(e.pointerId); setHeld(v); });
+    el.addEventListener('pointerup', () => setHeld(0));
+    el.addEventListener('pointercancel', () => setHeld(0));
+  }
+  window.addEventListener('keydown', e => {
+    if (mode !== 'hand') return;
+    if (e.key === 'ArrowLeft') { setHeld(-1); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { setHeld(1); e.preventDefault(); }
+  });
+  window.addEventListener('keyup', e => { if ((e.key === 'ArrowLeft' && held < 0) || (e.key === 'ArrowRight' && held > 0)) setHeld(0); });
+
+  function startHand() {
+    reset((Math.random() < 0.5 ? -1 : 1) * 0.03); setHeld(0);
+    $('tNow').textContent = '0.0 秒';
+    say('ロボットの頭脳を切った。少し傾いた状態から始まる。倒れそうな方向へ車輪を動かして、できるだけ長く立たせてみて。');
+  }
+  $('bRetry').onclick = startHand;
+
+  function setMode(m) {
+    mode = m;
+    $('tAuto').setAttribute('aria-selected', m === 'auto'); $('tHand').setAttribute('aria-selected', m === 'hand');
+    $('pAuto').hidden = m !== 'auto'; $('pHand').hidden = m !== 'hand';
+    if (m === 'hand') startHand();
+    else { reset(); say('ロボットの頭脳を戻した。1 秒に 100 回、傾きを測って車輪を動かしている。'); }
+  }
+  $('tAuto').onclick = () => setMode('auto');
+  $('tHand').onclick = () => setMode('hand');
+
+  const bindV = (id, f, onChange) => { const el = $(id), o = $(id + 'V'); const u = () => { o.textContent = f(+el.value); }; el.addEventListener('input', () => { u(); onChange && onChange(); }); u(); };
+  bindV('gain', v => `${v.toFixed(2)} 倍`, () => {
+    if (fallen) return;
+    const gv = gain();
+    if (gv < 0.4) say('反応を弱くした。傾いてもあまり車輪を動かさないので、ゆっくり倒れていく…');
+    else if (gv > 1.5) say('反応を強くした。小さな傾きにも大きく車輪を動かすので、きびきび立ち直る。');
+  });
+  bindV('delay', v => `${v} ミリ秒`, () => {
+    if (fallen) return;
+    const d = delay();
+    if (d >= 0.07) say(`センサーの遅れ ${Math.round(d * 1000)} ミリ秒。<b>少し前の傾き</b>を見て動くので、動きすぎたり足りなかったりして揺れ始める。`);
+    else if (d > 0) say(`センサーの遅れ ${Math.round(d * 1000)} ミリ秒。このくらいならまだ平気。`);
+  });
+
+  // ---------- ループ ----------
+  reset(); readColors(); resize();
+  say('何もしなければ倒れるけれど、1 秒に 100 回傾きを測って車輪を動かしているので立っていられる。<b>「押す」</b>や床のクリックを試してみて。');
+  new ResizeObserver(resize).observe(cv);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+  new MutationObserver(readColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  let last = performance.now(), acc = 0, frame = 0;
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const speed = mode === 'hand' ? +$('hs').value : 1;
+    acc += dt * speed;
+    while (acc >= DT) { step(); acc -= DT; if (!fallen) standT += DT; }
+    draw(now);
+    if (frame++ % 6 === 0) updateLoop();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  // 開いた直後に一度押して、立て直す様子を見せる
+  setTimeout(() => { if (mode === 'auto' && !fallen) push(1, 1.6); }, 1500);
+})();
+</script>
+</body>
+</html>

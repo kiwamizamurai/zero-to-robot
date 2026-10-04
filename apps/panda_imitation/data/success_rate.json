@@ -1,0 +1,107 @@
+{
+ "eval_count": 100,
+ "eval_seeds": [
+  1000,
+  1099
+ ],
+ "teacher": 0.99,
+ "teacher_demo_success": {
+  "noise": 0.995,
+  "clean": 0.995
+ },
+ "train_seeds": [
+  0,
+  1,
+  2
+ ],
+ "hidden": 128,
+ "epochs": 40,
+ "batch": 256,
+ "noise_std": 0.006,
+ "noise": [
+  {
+   "demos": 10,
+   "rate": 0,
+   "rates": [
+    0,
+    0,
+    0
+   ],
+   "loss": 0.14598209447952706,
+   "train_sec": 167,
+   "shipped": {
+    "train_seed": 0,
+    "rate": 0
+   }
+  },
+  {
+   "demos": 25,
+   "rate": 0,
+   "rates": [
+    0,
+    0,
+    0
+   ],
+   "loss": 0.09761580240401174,
+   "train_sec": 187
+  },
+  {
+   "demos": 50,
+   "rate": 0,
+   "rates": [
+    0,
+    0,
+    0
+   ],
+   "loss": 0.06029877402208952,
+   "train_sec": 207,
+   "shipped": {
+    "train_seed": 0,
+    "rate": 0
+   }
+  },
+  {
+   "demos": 100,
+   "rate": 0.19666666666666668,
+   "rates": [
+    0.07,
+    0,
+    0.52
+   ],
+   "loss": 0.054121436666634444,
+   "train_sec": 238
+  },
+  {
+   "demos": 200,
+   "rate": 0.6733333333333333,
+   "rates": [
+    0.55,
+    0.63,
+    0.84
+   ],
+   "loss": 0.04071672224922787,
+   "train_sec": 300,
+   "shipped": {
+    "train_seed": 1,
+    "rate": 0.63
+   }
+  }
+ ],
+ "clean": [
+  {
+   "demos": 200,
+   "rate": 0.5466666666666667,
+   "rates": [
+    0.73,
+    0.31,
+    0.6
+   ],
+   "loss": 0.012042711523234178,
+   "train_sec": 321,
+   "shipped": {
+    "train_seed": 2,
+    "rate": 0.6
+   }
+  }
+ ]
+}

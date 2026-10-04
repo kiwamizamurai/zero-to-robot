@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ロボット掃除機</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+/* Layout: 部屋を真上から見た大きな画面、右に操作と数字、下に「頭の中」6 枚と、掃除できた割合のグラフ */
+:root {
+  --bg: #f3f1ec;
+  --panel: #fffdf8;
+  --ink: #26292b;
+  --muted: #6b6f70;
+  --line: #dcd8cf;
+  --floor-dirty: #cdb38a;
+  --floor-clean: #f1e6cf;
+  --wall: #4a4f55;
+  --furn: #b9c3cc;
+  --furn-ink: #4a5560;
+  --cliff: #8d8478;
+  --robot: #2b2f33;
+  --bumper: #e0a020;
+  --lidar: #1f6fb2;
+  --dock: #3aa55d;
+  --accent: #1f6fb2;
+  --accent-soft: #e1ecf6;
+  --warn: #d9542f;
+  --m1: #e07b2f;
+  --m2: #8a5cc4;
+  --m3: #1f6fb2;
+  --font-display: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Noto Sans JP", sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b;
+    --floor-dirty: #6e5c43; --floor-clean: #a8957a; --wall: #c4cad0; --furn: #3d4852; --furn-ink: #c9d3dc; --cliff: #3a352f;
+    --robot: #d9dde1; --bumper: #f2b233; --lidar: #6fb0ea; --dock: #6cc47e;
+    --accent: #6fb0ea; --accent-soft: #1d2e3e; --warn: #f07b52; --m1: #f0a060; --m2: #b48ae6; --m3: #6fb0ea;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b;
+  --floor-dirty: #6e5c43; --floor-clean: #a8957a; --wall: #c4cad0; --furn: #3d4852; --furn-ink: #c9d3dc; --cliff: #3a352f;
+  --robot: #d9dde1; --bumper: #f2b233; --lidar: #6fb0ea; --dock: #6cc47e;
+  --accent: #6fb0ea; --accent-soft: #1d2e3e; --warn: #f07b52; --m1: #f0a060; --m2: #b48ae6; --m3: #6fb0ea;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+.wrap { max-width: 1160px; margin: 0 auto; padding: 22px 16px 44px; display: grid; gap: 18px; }
+header h1 { font-family: var(--font-display); font-weight: 800; font-size: 28px; margin: 0; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 66ch; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
+@media (max-width: 880px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.left { display: grid; gap: 8px; min-width: 0; }
+.stage { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+#sim { display: block; width: 100%; aspect-ratio: 6.4 / 4.55; max-width: 100%; }
+.say { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 9px 13px; font-size: 14px; line-height: 1.6; min-height: 3.4em; }
+.say b { color: var(--accent); }
+.panel { display: grid; gap: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.label { font-size: 12px; letter-spacing: .06em; color: var(--muted); font-weight: 500; }
+.seg { display: grid; gap: 6px; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label { border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px; cursor: pointer; font-size: 13.5px; display: grid; }
+.seg label small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.seg input:checked + label { border-color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+.seg input:checked + label small { font-weight: 400; }
+.seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+button { font: inherit; font-size: 14px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.big { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 700; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.row input { accent-color: var(--accent); }
+.row.check { flex-wrap: nowrap; align-items: flex-start; line-height: 1.5; }
+.row.check input { margin-top: 3px; flex: none; }
+.row.check.off { color: var(--muted); }
+select { font: inherit; font-size: 14px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stats div { background: var(--bg); border-radius: 10px; padding: 7px 10px; display: grid; }
+.stats b { font-weight: 400; font-size: 12px; color: var(--muted); }
+.stats span { font-family: var(--font-mono); font-size: 18px; font-variant-numeric: tabular-nums; }
+.btns { display: grid; grid-template-columns: 1fr; gap: 8px; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
+h2 { font-family: var(--font-display); font-weight: 800; font-size: 19px; margin: 0 0 4px; }
+.loop-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 10px; }
+.loop-head p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.cards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; list-style: none; padding: 0; margin: 0; }
+@media (max-width: 960px) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cards li { background: var(--panel); border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 11px; display: grid; gap: 3px; align-content: start; min-width: 0; }
+.cards li.active { border-color: var(--accent); background: var(--accent-soft); }
+.cards li.unused { opacity: .45; }
+.cards .n { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
+.cards strong { font-family: var(--font-display); font-size: 16px; }
+.cards .d { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.chartbox { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
+.chartbox h3 { margin: 0 0 4px; font-size: 13px; font-weight: 500; color: var(--muted); }
+#chart { display: block; width: 100%; height: 200px; }
+@media (max-width: 600px) { select, button { min-height: 44px; } .wrap { padding-left: 12px; padding-right: 12px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a href="../index.html" style="display:inline-block;padding:11px 0;font-size:13px;color:var(--muted);text-decoration:none">← サンプルアプリ一覧へ</a>
+    <h1>ロボット掃除機</h1>
+    <p>リビングと寝室、段差のある玄関がある部屋を、直径 34 cm のロボット掃除機が掃除します。「ぶつかったら曲がるだけ」「渦巻きと壁沿い」「LiDAR で地図を作って往復」の 3 つのやり方で、どれだけ漏れなく、どれだけ速く掃除できるかを比べてください。</p>
+  </header>
+
+  <div class="main">
+    <div class="left">
+      <div class="stage"><canvas id="sim" aria-label="部屋を真上から見た画面。ロボット掃除機が走ったところの床が明るくなる"></canvas></div>
+      <p class="say" id="say"></p>
+    </div>
+    <div class="panel">
+      <div>
+        <div class="label">掃除のやり方</div>
+        <div class="seg" role="radiogroup" aria-label="掃除のやり方">
+          <input type="radio" name="mode" id="m1" value="1"><label for="m1">1. ぶつかったら曲がる<small>まっすぐ進み、ぶつかったら適当な向きに回る(初代ルンバ)</small></label>
+          <input type="radio" name="mode" id="m2" value="2"><label for="m2">2. 渦巻き+壁沿い<small>広いところは渦巻き、壁に当たったら壁に沿って走る</small></label>
+          <input type="radio" name="mode" id="m3" value="3" checked><label for="m3">3. 地図を作って往復<small>LiDAR で部屋の地図を作り、行ける場所を往復で塗りつぶす</small></label>
+        </div>
+      </div>
+      <label class="row check"><input type="checkbox" id="cliff" checked><span>段差センサーを使う(前の床がなければ止まる)</span></label>
+      <label class="row check" id="slamRow"><input type="checkbox" id="slam" checked><span>LiDAR で自分の位置を直す(切ると車輪の回転だけで位置を出す)</span></label>
+      <label class="row check"><input type="checkbox" id="showMap" checked><span>ロボットの頭の中の地図を重ねる</span></label>
+      <div class="row"><label for="speed">速さ</label>
+        <select id="speed"><option value="1">実際の速さ</option><option value="4">4 倍</option><option value="12" selected>12 倍</option><option value="40">40 倍</option></select>
+      </div>
+      <hr>
+      <div class="stats" aria-live="polite">
+        <div><b>掃除できた割合</b><span id="sCov">0 %</span></div>
+        <div><b>時間</b><span id="sTime">0:00</span></div>
+        <div><b>電池</b><span id="sBat">100 %</span></div>
+        <div><b>ぶつかった回数</b><span id="sBump">0</span></div>
+      </div>
+      <div class="btns">
+        <button class="big" id="bReset">最初からやり直す</button>
+        <button id="bCompare">3 つのやり方を比べる(30 分ぶんをすぐ計算)</button>
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <div class="loop-head">
+      <h2>ロボットの頭の中</h2>
+      <p>いま使っている段階が光ります。1 と 2 のやり方は、地図を持たないので 2・3 を使いません。</p>
+    </div>
+    <ol class="cards">
+      <li id="c1"><span class="n">1</span><strong>測る</strong><span class="d">バンパー(ぶつかった)・段差センサー(床がない)・車輪の回転・LiDAR(まわりの距離)</span></li>
+      <li id="c2"><span class="n">2</span><strong>位置を出す</strong><span class="d">車輪の回転から位置を足し合わせ、LiDAR で地図と照らし合わせて直す</span></li>
+      <li id="c3"><span class="n">3</span><strong>地図を作る</strong><span class="d">LiDAR の光が当たったところは壁、通り抜けたところは床、と書き込む</span></li>
+      <li id="c4"><span class="n">4</span><strong>決める</strong><span class="d">次にどこへ行くか。ぶつかったら回る/壁に沿う/まだ掃除していない一番近い場所へ</span></li>
+      <li id="c5"><span class="n">5</span><strong>動かす</strong><span class="d">左右の車輪の速さを変えて、進む・曲がる・その場で回る</span></li>
+      <li id="c6"><span class="n">6</span><strong>充電台へ</strong><span class="d">電池が 15 % を切ったら、充電台の赤外線を探して戻る</span></li>
+    </ol>
+  </section>
+
+  <section class="chartbox">
+    <h3>掃除できた割合の変化(橙 = ぶつかったら曲がる、紫 = 渦巻き+壁沿い、青 = 地図を作って往復)</h3>
+    <canvas id="chart"></canvas>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  // ---------- 部屋(単位 m)。横 6 m × 縦 4 m。左がリビング、右が寝室、左下が玄関(段差) ----------
+  const W = 6.0, H = 4.0;
+  const R = 0.17;            // ロボットの半径(直径 34 cm)
+  const BRUSH = 0.19;        // ブラシが届く半径(本体の外に少しはみ出すサイドブラシ込み)
+  const VMAX = 0.25;         // 最高速度 [m/s]
+  const BAT_SEC = 1800;      // 満充電で 30 分
+  const DT = 0.05;           // 計算の刻み [s]
+  const DOCK = { x: R + 0.03, y: 2.8 };   // 充電台にはまった位置(ロボットは左を向いて止まる)
+  const CLIFF = { x0: 0, y0: 0, x1: 0.9, y1: 1.0 };   // 玄関の土間(15 cm 低い)
+  const RECTS = [
+    // 壁
+    { x0: -0.1, y0: -0.1, x1: W + 0.1, y1: 0, wall: true }, { x0: -0.1, y0: H, x1: W + 0.1, y1: H + 0.1, wall: true },
+    { x0: -0.1, y0: 0, x1: 0, y1: H, wall: true }, { x0: W, y0: 0, x1: W + 0.1, y1: H, wall: true },
+    { x0: 3.95, y0: 0, x1: 4.05, y1: 2.4, wall: true }, { x0: 3.95, y0: 3.3, x1: 4.05, y1: H, wall: true },
+    // 家具(下を通れないもの)
+    { x0: 0.9, y0: 3.3, x1: 2.9, y1: H, name: 'ソファ' },
+    { x0: 2.3, y0: 0, x1: 3.7, y1: 0.42, name: 'テレビ台' },
+    { x0: 4.35, y0: 0.15, x1: 5.75, y1: 2.15, name: 'ベッド' },
+    { x0: 5.3, y0: 3.45, x1: W, y1: H, name: '棚' },
+  ];
+  const TABLE = { x0: 1.4, y0: 1.5, x1: 2.6, y1: 2.3 };   // テーブル: 天板の下は通れる。脚だけがじゃま
+  const CIRCLES = [
+    { x: TABLE.x0 + 0.06, y: TABLE.y0 + 0.06, r: 0.03 }, { x: TABLE.x1 - 0.06, y: TABLE.y0 + 0.06, r: 0.03 },
+    { x: TABLE.x0 + 0.06, y: TABLE.y1 - 0.06, r: 0.03 }, { x: TABLE.x1 - 0.06, y: TABLE.y1 - 0.06, r: 0.03 },
+    { x: 3.6, y: 3.6, r: 0.18, name: '鉢' },
+  ];
+  function distObs(x, y) {
+    let d = 1e9;
+    for (const r of RECTS) {
+      const dx = Math.max(r.x0 - x, 0, x - r.x1), dy = Math.max(r.y0 - y, 0, y - r.y1);
+      const out = Math.hypot(dx, dy);
+      d = Math.min(d, out > 0 ? out : -Math.min(x - r.x0, r.x1 - x, y - r.y0, r.y1 - y));
+    }
+    for (const c of CIRCLES) d = Math.min(d, Math.hypot(x - c.x, y - c.y) - c.r);
+    return d;
+  }
+  const inCliff = (x, y) => x > CLIFF.x0 && x < CLIFF.x1 && y > CLIFF.y0 && y < CLIFF.y1;
+
+  // 2 cm 刻みの「本当の障害物」(LiDAR と横の距離センサー用)
+  const G2 = 0.02, N2X = Math.round(W / G2), N2Y = Math.round(H / G2);
+  const occ2 = new Uint8Array(N2X * N2Y);
+  for (let j = 0; j < N2Y; j++) for (let i = 0; i < N2X; i++) occ2[j * N2X + i] = distObs((i + 0.5) * G2, (j + 0.5) * G2) <= 0 ? 1 : 0;
+  const solid = (x, y) => { const i = Math.floor(x / G2), j = Math.floor(y / G2); return i < 0 || j < 0 || i >= N2X || j >= N2Y || occ2[j * N2X + i] === 1; };
+  function ray(x, y, a, max) {
+    const c = Math.cos(a), s = Math.sin(a);
+    for (let d = 0; d < max; d += G2) if (solid(x + c * d, y + s * d)) return d;
+    return max;
+  }
+
+  // 5 cm 刻みの床(ほこり)と、掃除できるはずの場所
+  const G = 0.05, NX = Math.round(W / G), NY = Math.round(H / G);
+  const cleanable = new Uint8Array(NX * NY);
+  (function () {
+    const reach = new Uint8Array(NX * NY), free = new Uint8Array(NX * NY);
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+      const x = (i + 0.5) * G, y = (j + 0.5) * G;
+      const m = R + 0.03, nearCliff = x > CLIFF.x0 - m && x < CLIFF.x1 + m && y > CLIFF.y0 - m && y < CLIFF.y1 + m;   // 段差センサーが止める位置より先には行けない
+      free[j * NX + i] = distObs(x, y) >= R && !nearCliff ? 1 : 0;
+    }
+    const q = [Math.floor(2.8 / G) * NX + Math.floor(0.6 / G)]; reach[q[0]] = 1;
+    while (q.length) {
+      const k = q.pop(), i = k % NX, j = (k / NX) | 0;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const a = i + di, b = j + dj, kk = b * NX + a;
+        if (a >= 0 && b >= 0 && a < NX && b < NY && free[kk] && !reach[kk]) { reach[kk] = 1; q.push(kk); }
+      }
+    }
+    const rr = Math.round(BRUSH / G);
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) if (reach[j * NX + i])
+      for (let b = -rr; b <= rr; b++) for (let a = -rr; a <= rr; a++) {
+        const ii = i + a, jj = j + b;
+        if (ii < 0 || jj < 0 || ii >= NX || jj >= NY || a * a + b * b > rr * rr) continue;
+        const x = (ii + 0.5) * G, y = (jj + 0.5) * G;
+        if (distObs(x, y) > 0 && !inCliff(x, y)) cleanable[jj * NX + ii] = 1;
+      }
+  })();
+  const nClean = cleanable.reduce((a, b) => a + b, 0);
+
+  // ---------- 乱数(比べるときに同じ結果になるように、種を決められる) ----------
+  let seed = 1;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const gauss = () => { const u = rnd() || 1e-9, v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+
+  // ---------- 状態 ----------
+  let S;
+  const mode = () => +document.querySelector('input[name="mode"]:checked').value;
+  function reset(opts = {}) {
+    seed = opts.seed || 7;
+    S = {
+      t: 0, x: DOCK.x, y: DOCK.y, th: Math.PI, bx: DOCK.x, by: DOCK.y, bth: Math.PI,
+      v: 0, w: 0, bat: 100, bumps: 0, dist: 0, fell: false, docked: false, done: false,
+      clean: new Uint8Array(NX * NY), nDone: 0, curve: [[0, 0]],
+      st: 'undock', stT: 0, turnLeft: 1, phase: 'spiral', phaseT: 0, spiralT: 0,
+      map: new Float32Array(NX * NY), hard: new Uint8Array(NX * NY), scan: [], plan: [], goal: null, goalT: 0, visited: new Uint8Array(CX * CY), returning: false,
+      card: 0, lastSay: -99,
+    };
+    say({
+      1: '充電台から出発。<b>ぶつかったら曲がる</b>だけのロボットです。地図も、自分の位置も持っていません。',
+      2: '充電台から出発。広いところでは<b>渦巻き</b>、壁に当たったら<b>壁に沿って</b>走ります。地図は持っていません。',
+      3: '充電台から出発。<b>LiDAR</b>(くるくる回るレーザーの距離計)で部屋の地図を作りながら、まだ掃除していない場所を往復で塗りつぶします。',
+    }[mode()]);
+  }
+  function say(h) { $('say').innerHTML = h; }
+  function sayOnce(h, gap = 6) { if (S.t - S.lastSay > gap) { say(h); S.lastSay = S.t; } }
+  function setCard(n) { S.card = n; }
+
+  // ---------- 3. の地図と計画: 25 cm のマスで「まだ掃除していない一番近い場所」へ ----------
+  const C = 0.25, CX = Math.round(W / C), CY = Math.round(H / C);
+  const mi = (x, y) => { const i = Math.floor(x / G), j = Math.floor(y / G); return i < 0 || j < 0 || i >= NX || j >= NY ? -1 : j * NX + i; };
+  function mapOcc(x, y) { const k = mi(x, y); return k < 0 || S.hard[k] ? 9 : S.map[k]; }
+  function mapMark(x, y, v) { const k = mi(x, y); if (k >= 0) S.map[k] = Math.max(-4, Math.min(4, S.map[k] + v)); }
+  function navigable(x, y) {          // 地図の上で、ロボットが置けるか(壁から R + 2 cm 離れているか)
+    if (x < R || y < R || x > W - R || y > H - R) return false;
+    const rr = Math.ceil((R + 0.02) / G), i0 = Math.floor(x / G), j0 = Math.floor(y / G);
+    for (let b = -rr; b <= rr; b++) for (let a = -rr; a <= rr; a++) {
+      const i = i0 + a, j = j0 + b;
+      if (i < 0 || j < 0 || i >= NX || j >= NY) return false;
+      const cx = (i + 0.5) * G - x, cy = (j + 0.5) * G - y;
+      if (cx * cx + cy * cy <= (R + 0.02) ** 2 && (S.map[j * NX + i] > 0.8 || S.hard[j * NX + i])) return false;
+    }
+    return true;
+  }
+  function cellTarget(ci, cj) {       // マスの中で、床と分かっていて置ける点のうち、マスの中心に一番近い点
+    let best = null, bd = 1e9;
+    for (let b = 0; b < 5; b++) for (let a = 0; a < 5; a++) {
+      const x = ci * C + (a + 0.5) * G, y = cj * C + (b + 0.5) * G;
+      if (mapOcc(x, y) > -0.5) continue;
+      const d = Math.hypot(x - (ci + 0.5) * C, y - (cj + 0.5) * C);
+      if (d < bd && navigable(x, y)) { bd = d; best = [x, y]; }
+    }
+    return best;
+  }
+  function segFree(a, b) {
+    for (let k = 1; k < 4; k++) { const t = k / 4; if (!navigable(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)) return false; }
+    return true;
+  }
+  function planTo(pred) {             // 4 方向の幅優先探索。pred を満たす一番近いマスへの道
+    // マスごとの目標点は重いので、3 秒ごと(とぶつかったとき)だけ計算し直す
+    if (!S.tg || S.t - S.tgT > 3) { S.tg = []; for (let j = 0; j < CY; j++) for (let i = 0; i < CX; i++) S.tg.push(cellTarget(i, j)); S.tgT = S.t; }
+    const tg = S.tg;
+    const si = Math.max(0, Math.min(CX - 1, Math.floor(S.bx / C))), sj = Math.max(0, Math.min(CY - 1, Math.floor(S.by / C)));
+    const start = [S.bx, S.by], prev = new Int32Array(CX * CY).fill(-2), q = [];
+    // 出発: いまいる場所から直接行けるまわりのマス
+    for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) {
+      const i = si + a, j = sj + b, k = j * CX + i;
+      if (i < 0 || j < 0 || i >= CX || j >= CY || !tg[k] || Math.abs(a) + Math.abs(b) > 1) continue;
+      prev[k] = -1; q.push(k);   // 出発のマスは、ぶつかった直後でも選べるように通れるかを見ない
+    }
+    let found = -1, h = 0;
+    const dirPref = S.lastDir || [0, 1];
+    while (h < q.length && found < 0) {
+      // 同じ距離のマスの中では、縦にまっすぐ進むマスを先に見る(往復の形になる)
+      const levelEnd = q.length, level = q.slice(h, levelEnd); h = levelEnd;
+      for (const k of level) if (pred(k % CX, (k / CX) | 0, k)) { found = k; break; }
+      if (found >= 0) break;
+      for (const k of level) {
+        const i = k % CX, j = (k / CX) | 0;
+        const nb = [[0, dirPref[1] || 1], [0, -(dirPref[1] || 1)], [1, 0], [-1, 0]];
+        for (const [a, b] of nb) {
+          const ii = i + a, jj = j + b, kk = jj * CX + ii;
+          if (ii < 0 || jj < 0 || ii >= CX || jj >= CY || prev[kk] !== -2 || !tg[kk] || !segFree(tg[k], tg[kk])) continue;
+          prev[kk] = k; q.push(kk);
+        }
+      }
+    }
+    if (found < 0) return null;
+    const path = [];
+    for (let k = found; k !== -1; k = prev[k]) path.unshift(tg[k]);
+    return path;
+  }
+  function replan() {
+    setCard(4);
+    let path = planTo((i, j, k) => !S.visited[k]);
+    if (!path) { S.tg = null; path = planTo((i, j, k) => !S.visited[k]); }   // 地図を見直して、もう一度だけ探す
+    if (!path) { S.plan = []; return false; }
+    S.plan = path; S.goalT = 0;
+    return true;
+  }
+
+  // ---------- 1. 測る ----------
+  function lidarScan() {
+    setCard(3);
+    const scan = [];
+    for (let k = 0; k < 72; k++) {
+      const a = S.th + k / 72 * 2 * Math.PI, d = ray(S.x, S.y, a, 3.5);
+      scan.push([a - S.th, d]);
+      // 地図には「自分が思っている位置」から書く。位置がずれていると、地図もずれる
+      const ba = S.bth + (a - S.th), c = Math.cos(ba), s = Math.sin(ba);
+      for (let r = 0.1; r < d - 0.04; r += G) mapMark(S.bx + c * r, S.by + s * r, -0.5);
+      if (d < 3.5) mapMark(S.bx + c * d, S.by + s * d, 2.5);
+    }
+    S.scan = scan;
+  }
+  function bumperSide() {             // 当たった向きを、左(+0.8)・正面(0)・右(-0.8)の 3 つに丸める
+    let best = 0, bd = 1e9;
+    for (const da of [-0.8, -0.4, 0, 0.4, 0.8]) { const d = distObs(S.x + Math.cos(S.th + da) * R, S.y + Math.sin(S.th + da) * R); if (d < bd) { bd = d; best = da; } }
+    return best > 0.2 ? 0.8 : best < -0.2 ? -0.8 : 0;
+  }
+  function cliffAhead() {
+    for (const da of [-0.6, 0, 0.6]) {
+      const a = S.th + da, x = S.x + Math.cos(a) * (R + 0.03), y = S.y + Math.sin(a) * (R + 0.03);
+      if (inCliff(x, y)) return true;
+    }
+    return false;
+  }
+  const sideDist = () => ray(S.x, S.y, S.th - Math.PI / 2, 0.6) - R;   // 右側の距離センサー(壁沿いに使う)
+  const frontDist = () => Math.min(ray(S.x, S.y, S.th, 0.6), ray(S.x, S.y, S.th + 0.4, 0.6), ray(S.x, S.y, S.th - 0.4, 0.6)) - R;
+  function beaconSeen() {               // 充電台の赤外線: 2.5 m 以内で、間に何もなければ見える
+    const d = Math.hypot(S.x - DOCK.x, S.y - DOCK.y);
+    if (d > 2.5) return false;
+    const a = Math.atan2(DOCK.y - S.y, DOCK.x - S.x);
+    return ray(S.x, S.y, a, d) >= d - 0.05;
+  }
+
+  // ---------- 4. 決める(やり方ごとの行動) ----------
+  const angWrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+  function go(v, w) { S.v = v; S.w = w; }
+  function startTurn(minDeg, maxDeg) {
+    S.st = 'turn'; S.stT = 0;
+    S.turnLeft = rnd() < 0.5 ? 1 : -1;
+    S.turnDur = (minDeg + rnd() * (maxDeg - minDeg)) * Math.PI / 180 / 1.6;
+  }
+  function onBump(kind) {
+    if (kind === 'bump') S.bumps++;
+    if (mode() === 3) {
+      // ぶつかった・段差があった場所を、LiDAR では消えない別の層に書く(LiDAR は低いものや段差が見えない)
+      // バンパーは左・正面・右の 3 つのスイッチ。どれが押されたかで、当たった向きが分かる
+      const side = kind === 'bump' ? bumperSide() : 0;
+      const x = S.bx + Math.cos(S.bth + side) * (R + 0.05), y = S.by + Math.sin(S.bth + side) * (R + 0.05);
+      for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const k = mi(x + a * G, y + b * G); if (k >= 0) S.hard[k] = 1; }
+      S.after = S.st === 'edge' ? 'edge' : S.returning ? S.st : 'replan'; S.st = 'back'; S.stT = 0; S.tg = null; S.plan = [];
+      sayOnce(kind === 'cliff' ? '<b>段差センサー</b>: 前の床がない。下がって、段差を地図に書き込みました(LiDAR には段差が見えません)。' : 'ぶつかった。ぶつかった場所を地図に書いて、道を探し直します。');
+      return;
+    }
+    S.st = 'back'; S.stT = 0; S.after = 'turn';
+    if (mode() === 2 && S.phase === 'spiral' && !S.returning) { S.phase = 'wall'; S.phaseT = 0; sayOnce('渦巻きの途中で壁に当たった → ここからしばらく<b>壁に沿って</b>走ります(右側の距離センサーで壁との間を保つ)。'); }
+    if (kind === 'cliff') sayOnce('<b>段差センサー</b>: 前の床がない → 下がって向きを変えます。');
+    else if (mode() === 1) sayOnce('ぶつかった → 少し下がって、<b>適当な向き</b>に回ります。どこを掃除したかは覚えていません。');
+  }
+  function decide() {
+    const m = mode();
+    S.stT += DT;
+    if (S.st === 'undock') { setCard(5); go(-0.12, 0); if (S.stT > 2.5) { S.st = 'spin'; S.stT = 0; } return; }
+    if (S.st === 'spin') { go(0, 1.6); if (S.stT > Math.PI / 1.6) { S.st = m === 3 ? 'replan' : 'fwd'; S.stT = 0; S.phase = 'spiral'; S.phaseT = 0; S.spiralT = 0; } return; }
+    if (S.st === 'back') { setCard(5); go(-0.12, 0); if (S.stT > 0.5) { S.stT = 0; if (S.after === 'edge' || (S.after === 'seek')) { S.st = 'turn'; S.turnLeft = 1; S.turnDur = 0.6; S.afterTurn = S.after; } else if (S.after !== 'turn') S.st = S.after; else if (m === 2 && (S.phase === 'wall' || S.returning)) { S.st = 'turn'; S.turnLeft = 1; S.turnDur = 0.5; } else startTurn(m === 1 ? 90 : 60, m === 1 ? 200 : 150); } return; }
+    if (S.st === 'turn') { go(0, 1.6 * S.turnLeft); if (S.stT > S.turnDur) { S.st = S.afterTurn || 'fwd'; S.afterTurn = null; S.stT = 0; } return; }
+
+    // 電池が減ったら充電台へ
+    if (!S.returning && (S.bat < 15 || S.done)) {
+      S.returning = true; S.st = m === 3 ? 'home' : 'seek'; S.stT = 0; S.phaseT = 0; S.plan = [];
+      say(S.done ? '往復と壁際の掃除が終わりました。<b>地図の上で道を探して、充電台へ戻ります</b>。' : `電池が ${S.bat.toFixed(0)} % になったので、<b>充電台へ戻ります</b>${m === 3 ? '(地図の上で道を探す)' : '(地図がないので、壁に沿って充電台の赤外線を探す)'}。`);
+    }
+    if (S.st === 'approach') return approach();
+    if (S.returning && beaconSeen() && S.st !== 'approach') { S.st = 'approach'; S.stT = 0; return; }
+    if (S.st === 'seek') { setCard(6); S.phaseT += DT; if (S.phaseT % 55 < 40) return wallFollow(); return go(VMAX, 0); }
+    if (S.st === 'home') {
+      setCard(6);
+      if (!S.plan.length) {
+        const dk = [Math.floor(0.6 / C), Math.floor(DOCK.y / C)];
+        const p = planTo((i, j) => Math.abs(i - dk[0]) + Math.abs(j - dk[1]) <= 1);
+        if (!p) return wallFollow();
+        S.plan = p;
+      }
+      return followPlan();
+    }
+
+    if (m === 1) { setCard(4); go(VMAX, 0); return; }
+    if (m === 2) {
+      setCard(4);
+      S.phaseT += DT;
+      if (S.phase === 'spiral') {
+        S.spiralT += DT;
+        const r = 0.12 + 0.012 * S.spiralT;            // 半径を少しずつ広げる
+        go(VMAX, VMAX / r);
+        if (S.spiralT > 45) { S.phase = 'bounce'; S.phaseT = 0; }
+        return;
+      }
+      if (S.phase === 'wall') { if (S.phaseT > 40) { S.phase = 'bounce'; S.phaseT = 0; } return wallFollow(); }
+      if (S.phase === 'bounce') { go(VMAX, 0); if (S.phaseT > 50) { S.phase = 'spiral'; S.phaseT = 0; S.spiralT = 0; } return; }
+    }
+    if (m === 3) {
+      if (S.st === 'edge') {                // 最後に壁際を走る(地図の往復では、壁ぎりぎりが残る)
+        setCard(4); S.edgeT += DT;
+        if (S.edgeT > 150) { S.done = true; return go(0, 0); }
+        return wallFollow();
+      }
+      if (S.st === 'replan' || !S.plan.length) {
+        if (!replan()) { S.st = 'edge'; S.edgeT = 0; say('地図の中で行ける場所を往復で全部まわりました。最後に<b>壁際</b>を 2 分半走ります(往復だけでは、壁ぎりぎりが残るので)。'); return go(0, 0); }
+        S.st = 'follow';
+      }
+      return followPlan();
+    }
+  }
+  function wallFollow() {             // 右手を壁につけて歩く
+    const f = frontDist(), d = sideDist();
+    if (f < 0.06) return go(0, 1.6);
+    if (d > 0.3) return go(0.16, -1.1);
+    go(0.2, Math.max(-1.4, Math.min(1.4, 5 * (0.04 - d))));
+  }
+  function followPlan() {
+    setCard(5);
+    const g = S.plan[0];
+    S.goalT += DT;
+    const dx = g[0] - S.bx, dy = g[1] - S.by, d = Math.hypot(dx, dy);
+    if (d < 0.09 || S.goalT > 14) {
+      if (S.goalT > 14) { const k = Math.floor(g[1] / C) * CX + Math.floor(g[0] / C); if (k >= 0) S.visited[k] = 1; }
+      S.plan.shift(); S.goalT = 0;
+      if (S.plan.length) { const n = S.plan[0]; S.lastDir = [Math.sign(Math.round((n[0] - g[0]) / C)), Math.sign(Math.round((n[1] - g[1]) / C))]; }
+      if (!S.plan.length && !S.returning) { if (!replan()) { S.st = 'edge'; S.edgeT = 0; return go(0, 0); } }
+      if (!S.plan.length) return go(0, 0);
+      return followPlan();
+    }
+    const err = angWrap(Math.atan2(dy, dx) - S.bth);
+    if (Math.abs(err) > 0.35) return go(0, 1.8 * Math.sign(err));
+    go(Math.min(VMAX, 0.9 * d + 0.15), 3 * err);
+  }
+  function approach() {                // 赤外線をたどって充電台へ。最後はまっすぐ押し込む
+    setCard(6);
+    const tx = DOCK.x + 0.35, ty = DOCK.y;
+    if (!S.aligned) {
+      const dx = tx - S.x, dy = ty - S.y, d = Math.hypot(dx, dy);
+      if (d < 0.05) { S.aligned = true; return go(0, 0); }
+      const err = angWrap(Math.atan2(dy, dx) - S.th);
+      if (Math.abs(err) > 0.3) return go(0, 1.6 * Math.sign(err));
+      return go(Math.min(0.2, 0.8 * d + 0.03), 3 * err);
+    }
+    const err = angWrap(Math.PI + Math.atan2(DOCK.y - S.y, 0.3) * 0 - S.th);
+    if (Math.abs(err) > 0.08) return go(0, 1.2 * Math.sign(err));
+    go(0.1, 2 * angWrap(Math.atan2(DOCK.y - S.y, DOCK.x - S.x) - S.th));
+    if (S.x < DOCK.x + 0.01) { S.docked = true; go(0, 0); say(`<b>充電台に戻りました</b>。掃除できた割合 ${(S.nDone / nClean * 100).toFixed(0)} %、${fmtT(S.t)}。`); }
+  }
+
+  // ---------- 5. 動かす(物理と、車輪の回転から出す位置) ----------
+  function physics() {
+    if (S.fell || S.docked || S.bat <= 0) { S.v = S.w = 0; return; }
+    const v = S.v, w = S.w;
+    S.th = angWrap(S.th + w * DT);
+    const nx = S.x + Math.cos(S.th) * v * DT, ny = S.y + Math.sin(S.th) * v * DT;
+    let moved = true;
+    if (distObs(nx, ny) < R) {
+      moved = false;
+      if (v > 0 && S.st !== 'back') onBump('bump');
+    } else { S.x = nx; S.y = ny; S.dist += Math.abs(v) * DT; }
+    if (inCliff(S.x, S.y)) { S.fell = true; say('<b>玄関の段差から落ちました</b>。段差センサーがないと、ロボットは床がなくなったことに気づけません。'); }
+    if ($('cliff').checked && v > 0 && S.st !== 'back' && cliffAhead()) onBump('cliff');
+    // 車輪の回転(エンコーダ)から位置を足し合わせる。ぶつかっている間も車輪は回るので、ずれる
+    const slam = $('slam').checked || mode() !== 3;
+    const enc = v * DT * (slam ? 1 : 1.03), encW = w * DT * (slam ? 1 : 1.04) + (slam ? 0 : gauss() * 0.004);
+    S.bth = angWrap(S.bth + encW);
+    S.bx += Math.cos(S.bth) * enc; S.by += Math.sin(S.bth) * enc;
+    if (!moved && !slam) { /* 押しつけて空回りした分も、進んだことになってしまう */ }
+    S.bat = Math.max(0, S.bat - 100 / BAT_SEC * DT);
+    if (S.bat <= 0 && !S.docked) say('<b>電池切れ</b>で止まりました。充電台まで戻れませんでした。');
+    // ブラシが届いたところを掃除済みにする
+    const rr = Math.ceil(BRUSH / G), i0 = Math.floor(S.x / G), j0 = Math.floor(S.y / G);
+    for (let b = -rr; b <= rr; b++) for (let a = -rr; a <= rr; a++) {
+      const i = i0 + a, j = j0 + b; if (i < 0 || j < 0 || i >= NX || j >= NY) continue;
+      const k = j * NX + i, cx = (i + 0.5) * G - S.x, cy = (j + 0.5) * G - S.y;
+      if (!S.clean[k] && cx * cx + cy * cy <= BRUSH * BRUSH) { S.clean[k] = 1; if (cleanable[k]) S.nDone++; }
+    }
+    // 3. 地図を作る: 0.25 秒ごとに LiDAR、位置を地図で直す
+    if (mode() === 3) {
+      if (Math.round(S.t / DT) % 5 === 0) {
+        lidarScan();
+        if (slam) { setCard(2); S.bx += (S.x - S.bx) * 0.9 + gauss() * 0.004; S.by += (S.y - S.by) * 0.9 + gauss() * 0.004; S.bth += angWrap(S.th - S.bth) * 0.9; }
+      }
+      const k = Math.floor(S.by / C) * CX + Math.floor(S.bx / C);
+      if (S.plan.length && k >= 0 && k < CX * CY) {
+        const g = S.plan[0], kg = Math.floor(g[1] / C) * CX + Math.floor(g[0] / C);
+        if (Math.hypot(g[0] - S.bx, g[1] - S.by) < 0.1) S.visited[kg] = 1;
+      }
+    }
+  }
+  function step() {
+    if (S.fell || S.docked || S.bat <= 0) return;
+    setCard(1);
+    decide();
+    physics();
+    S.t += DT;
+    if (Math.round(S.t / DT) % 200 === 0) S.curve.push([S.t, S.nDone / nClean]);
+  }
+
+  // ---------- 描く ----------
+  const cv = $('sim'), ctx = cv.getContext('2d'), ch = $('chart'), cx2 = ch.getContext('2d');
+  const off = document.createElement('canvas'); off.width = NX; off.height = NY;
+  const octx = off.getContext('2d'), img = octx.createImageData(NX, NY);
+  let Cc = {}, V = {};
+  function readColors() { const cs = getComputedStyle(document.documentElement); for (const k of ['ink', 'muted', 'line', 'panel', 'floor-dirty', 'floor-clean', 'wall', 'furn', 'furn-ink', 'cliff', 'robot', 'bumper', 'lidar', 'dock', 'accent', 'warn', 'm1', 'm2', 'm3']) Cc[k] = cs.getPropertyValue('--' + k).trim(); }
+  function fit(c) { const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1; c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); return { w: r.width, h: r.height, dpr }; }
+  function resize() { V = fit(cv); V.s = Math.min((V.w - 30) / W, (V.h - 50) / H); V.ox = (V.w - W * V.s) / 2; V.oy = 38; fitChart(); }
+  let CH = {}; function fitChart() { CH = fit(ch); }
+  const P = (x, y) => [V.ox + x * V.s, V.oy + (H - y) * V.s];   // 上が y の大きい方
+  const rgb = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  function draw() {
+    const { w, h, dpr, s } = V;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = Cc.panel; ctx.fillRect(0, 0, w, h);
+    // 床: 掃除したところが明るい
+    const d0 = rgb(Cc['floor-dirty']), d1 = rgb(Cc['floor-clean']);
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+      const k = j * NX + i, p = ((NY - 1 - j) * NX + i) * 4, c = S.clean[k] ? d1 : d0;
+      img.data[p] = c[0]; img.data[p + 1] = c[1]; img.data[p + 2] = c[2]; img.data[p + 3] = 255;
+    }
+    octx.putImageData(img, 0, 0);
+    const o = P(0, H);
+    ctx.imageSmoothingEnabled = false; ctx.drawImage(off, o[0], o[1], W * s, H * s); ctx.imageSmoothingEnabled = true;
+    // 玄関
+    let a = P(CLIFF.x0, CLIFF.y1); ctx.fillStyle = Cc.cliff; ctx.fillRect(a[0], a[1], (CLIFF.x1 - CLIFF.x0) * s, (CLIFF.y1 - CLIFF.y0) * s);
+    ctx.fillStyle = Cc.panel; ctx.font = '600 12px "Noto Sans JP", sans-serif'; ctx.fillText('玄関(段差 15 cm)', a[0] + 6, a[1] + 18);
+    // テーブルの天板(下を通れる)
+    a = P(TABLE.x0, TABLE.y1); ctx.strokeStyle = Cc['furn-ink']; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2;
+    ctx.strokeRect(a[0], a[1], (TABLE.x1 - TABLE.x0) * s, (TABLE.y1 - TABLE.y0) * s); ctx.setLineDash([]);
+    ctx.fillStyle = Cc['furn-ink']; ctx.font = '500 12px "Noto Sans JP", sans-serif'; ctx.fillText('テーブル(下を通れる)', a[0] + 6, a[1] + 16);
+    // 家具と壁
+    for (const r of RECTS) {
+      const p = P(r.x0, r.y1); ctx.fillStyle = r.wall ? Cc.wall : Cc.furn; ctx.fillRect(p[0], p[1], (r.x1 - r.x0) * s, (r.y1 - r.y0) * s);
+      if (r.name) { ctx.fillStyle = Cc['furn-ink']; ctx.font = '600 13px "Noto Sans JP", sans-serif'; ctx.fillText(r.name, p[0] + 8, p[1] + Math.min(20, (r.y1 - r.y0) * s / 2 + 5)); }
+    }
+    for (const c of CIRCLES) { const p = P(c.x, c.y); ctx.fillStyle = c.name ? Cc.furn : Cc['furn-ink']; ctx.beginPath(); ctx.arc(p[0], p[1], c.r * s, 0, 7); ctx.fill(); if (c.name) { ctx.fillStyle = Cc['furn-ink']; ctx.fillText(c.name, p[0] - 7, p[1] + 4); } }
+    // 充電台
+    a = P(0, DOCK.y + 0.14); ctx.fillStyle = Cc.dock; ctx.fillRect(a[0], a[1], 0.07 * s, 0.28 * s);
+    ctx.font = '600 12px "Noto Sans JP", sans-serif'; ctx.fillText('充電台', a[0] + 10, a[1] - 4);
+    // ロボットの地図
+    if ($('showMap').checked && mode() === 3) {
+      for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+        const v = S.map[j * NX + i]; if (v === 0) continue;
+        const p = P(i * G, (j + 1) * G);
+        if (v > 0.8) { ctx.fillStyle = 'rgba(20,24,28,.7)'; ctx.fillRect(p[0], p[1], G * s + 0.5, G * s + 0.5); }
+      }
+      for (let k = 0; k < NX * NY; k++) if (S.hard[k]) {
+        const p = P((k % NX) * G, (((k / NX) | 0) + 1) * G); ctx.fillStyle = Cc.warn; ctx.globalAlpha = 0.75; ctx.fillRect(p[0], p[1], G * s + 0.5, G * s + 0.5); ctx.globalAlpha = 1;
+      }
+      if (S.plan.length) {
+        ctx.strokeStyle = Cc.accent; ctx.lineWidth = 2; ctx.setLineDash([4, 4]); ctx.beginPath();
+        let p = P(S.bx, S.by); ctx.moveTo(p[0], p[1]);
+        for (const g of S.plan) { p = P(g[0], g[1]); ctx.lineTo(p[0], p[1]); }
+        ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
+    // LiDAR の光
+    if (mode() === 3 && S.scan.length && !S.docked) {
+      const c0 = P(S.x, S.y); ctx.strokeStyle = Cc.lidar; ctx.globalAlpha = 0.18; ctx.lineWidth = 1;
+      for (const [aa, d] of S.scan) { const e = P(S.x + Math.cos(S.th + aa) * d, S.y + Math.sin(S.th + aa) * d); ctx.beginPath(); ctx.moveTo(c0[0], c0[1]); ctx.lineTo(e[0], e[1]); ctx.stroke(); }
+      ctx.globalAlpha = 1;
+    }
+    // ロボットが思っている自分の位置(ずれているとき)
+    if (mode() === 3 && Math.hypot(S.bx - S.x, S.by - S.y) > 0.05) {
+      const p = P(S.bx, S.by); ctx.strokeStyle = Cc.warn; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(p[0], p[1], R * s, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = Cc.warn; ctx.font = '600 12px "Noto Sans JP", sans-serif'; ctx.fillText('ロボットが思っている位置', p[0] + R * s + 4, p[1] - 4);
+    }
+    // ロボット
+    const p = P(S.x, S.y), r = R * s, th = -S.th;
+    ctx.fillStyle = Cc.robot; ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 7); ctx.fill();
+    ctx.strokeStyle = Cc.bumper; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(p[0], p[1], r - 1, th - 1.2, th + 1.2); ctx.stroke();
+    ctx.strokeStyle = Cc.panel; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[0] + Math.cos(th) * r * 0.75, p[1] + Math.sin(th) * r * 0.75); ctx.stroke();
+    if (mode() === 3) { ctx.fillStyle = Cc.lidar; ctx.beginPath(); ctx.arc(p[0], p[1], r * 0.28, 0, 7); ctx.fill(); }
+    if (S.fell) { ctx.fillStyle = Cc.warn; ctx.font = '800 15px "M PLUS Rounded 1c", sans-serif'; ctx.fillText('落ちた!', p[0] + r + 4, p[1]); }
+    // 上の説明
+    ctx.fillStyle = Cc.muted; ctx.font = '500 12px "Noto Sans JP", sans-serif';
+    ctx.fillText('リビング', P(0.2, H)[0], 26); ctx.fillText('寝室', P(4.2, H)[0], 26);
+  }
+  const fmtT = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  function updateStats() {
+    $('sCov').textContent = `${(S.nDone / nClean * 100).toFixed(0)} %`;
+    $('sTime').textContent = fmtT(S.t);
+    $('sBat').textContent = `${S.bat.toFixed(0)} %`;
+    $('sBump').textContent = S.bumps;
+    const m = mode();
+    for (let k = 1; k <= 6; k++) {
+      $('c' + k).classList.toggle('active', S.card === k);
+      $('c' + k).classList.toggle('unused', m !== 3 && (k === 2 || k === 3));
+    }
+    $('slamRow').classList.toggle('off', m !== 3);
+    $('slam').disabled = m !== 3;
+  }
+  const compared = { 1: null, 2: null, 3: null };
+  function drawChart() {
+    const { w, h, dpr } = CH; cx2.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cx2.fillStyle = Cc.panel; cx2.fillRect(0, 0, w, h);
+    const L = 44, Rr = 12, T = 8, B = 26, X = t => L + t / 1800 * (w - L - Rr), Y = c => T + (1 - c) * (h - T - B);
+    cx2.strokeStyle = Cc.line; cx2.fillStyle = Cc.muted; cx2.font = '11px "IBM Plex Mono", monospace'; cx2.lineWidth = 1;
+    for (const c of [0, 0.25, 0.5, 0.75, 1]) { cx2.beginPath(); cx2.moveTo(L, Y(c)); cx2.lineTo(w - Rr, Y(c)); cx2.stroke(); cx2.fillText(`${c * 100}%`, 4, Y(c) + 4); }
+    for (let m = 0; m <= 30; m += 5) { cx2.fillText(`${m}分`, X(m * 60) - 10, h - 8); }
+    const line = (cu, col, lw, dash) => {
+      if (!cu || cu.length < 2) return;
+      cx2.strokeStyle = col; cx2.lineWidth = lw; cx2.setLineDash(dash); cx2.beginPath();
+      cu.forEach(([t, c], i) => i ? cx2.lineTo(X(Math.min(t, 1800)), Y(c)) : cx2.moveTo(X(t), Y(c)));
+      cx2.stroke(); cx2.setLineDash([]);
+    };
+    // 「比べる」で計算した 3 本は細い線、いま動いている 1 本は太い線
+    for (const m of [1, 2, 3]) line(compared[m], Cc['m' + m], 2, []);
+    line(S.curve, Cc['m' + mode()], 3.5, compared[mode()] ? [6, 4] : []);
+  }
+
+  // ---------- 操作 ----------
+  document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener('change', () => reset()));
+  $('slam').addEventListener('change', () => reset());
+  $('cliff').addEventListener('change', () => { if (!$('cliff').checked) say('段差センサーを切りました。<b>玄関の近く</b>を見ていてください。'); });
+  $('bReset').onclick = () => reset();
+  $('bCompare').onclick = () => {
+    const cur = mode(), res = [];
+    const keepSet = { slam: $('slam').checked, cliff: $('cliff').checked };   // 比べるときは、段差センサー・位置の修正をオンにそろえる
+    for (const m of [1, 2, 3]) { const r = simulate(1800, { mode: m, slam: true, cliff: true }); res.push(`${['', 'ぶつかったら曲がる', '渦巻き+壁沿い', '地図を作って往復'][m]} ${(r.coverage * 100).toFixed(0)} %`); compared[m] = r.curve; }
+    $('m' + cur).checked = true; $('slam').checked = keepSet.slam; $('cliff').checked = keepSet.cliff; reset();
+    say(`30 分以内の比較(掃除できた割合): ${res.join('、')}。グラフの線で、掃除の進み方の違いを見てください。`);
+  };
+
+  function simulate(sec, opts = {}) {
+    if (opts.mode) $('m' + opts.mode).checked = true;
+    if (opts.cliff !== undefined) $('cliff').checked = opts.cliff;
+    if (opts.slam !== undefined) $('slam').checked = opts.slam;
+    reset(opts);
+    const n = Math.round(sec / DT);
+    for (let k = 0; k < n && !(S.fell || S.docked || S.bat <= 0); k++) step();
+    S.curve.push([S.t, S.nDone / nClean]);
+    return { coverage: S.nDone / nClean, time: S.t, bumps: S.bumps, fell: S.fell, docked: S.docked, battery: S.bat, done: S.done, dist: S.dist, curve: S.curve };
+  }
+  window.__vac = { simulate, state: () => S, step: n => { for (let k = 0; k < n; k++) step(); } };
+
+  // ---------- ループ ----------
+  readColors(); reset(); resize();
+  new ResizeObserver(resize).observe(cv); new ResizeObserver(fitChart).observe(ch);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+  let last = performance.now(), frame = 0, acc = 0;
+  function loop(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    acc = Math.min(acc + dt * +$('speed').value, 40 * DT * 10);   // 1 フレームで足りない分は次のフレームに持ち越す
+    while (acc >= DT) { step(); acc -= DT; }
+    draw();
+    if (frame++ % 6 === 0) { updateStats(); drawChart(); }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

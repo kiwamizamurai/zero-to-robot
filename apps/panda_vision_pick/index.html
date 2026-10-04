@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>カメラで見つけて片付ける</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<script type="importmap">
+{ "imports": { "three": "../_web/vendor/three/three.module.js", "three/addons/": "../_web/vendor/three/" } }
+</script>
+<link rel="stylesheet" href="../_web/ui.css">
+<style>
+  .cams { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; align-items: start; }
+  .cams figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px; display: grid; gap: 6px; }
+  .cams canvas { width: 100%; height: auto; aspect-ratio: 1; display: block; border-radius: 8px; image-rendering: pixelated; }
+  .cams figcaption { font-size: 13px; color: var(--muted); }
+  table.det { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.det th { text-align: left; font-weight: 500; color: var(--muted); padding: 2px 4px; border-bottom: 1px solid var(--line); }
+  table.det td { padding: 3px 4px; font-family: var(--font-mono); font-size: 12px; }
+  .seedrow { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
+  .seedrow input { width: 100%; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="../index.html">← サンプルアプリ一覧へ</a>
+    <h1>カメラで見つけて片付ける</h1>
+    <p>ブロックの位置を「教えてもらう」のではなく、天井のカメラの画像だけから見つけて片付けます。画像から色ごとにブロックを切り出し、中心と向きを求め、カメラの画角と深度(カメラからの距離)で机の上の座標に直してから、つかみに行きます。下の画像で、ロボットの目に何が見えているかを確かめられます。</p>
+  </header>
+  <div id="status" class="status">読み込み中…</div>
+  <div class="main" id="app" hidden>
+    <div class="stage"><canvas id="view"></canvas></div>
+    <aside class="panel">
+      <div class="row">
+        <button class="primary" id="play">スタート</button>
+        <button id="reset">最初から</button>
+      </div>
+      <div>
+        <label>速さ <input type="range" id="speed" min="0.5" max="4" step="0.5" value="1"> <span class="mono" id="speedv">1x</span></label>
+      </div>
+      <div class="seedrow">
+        <label for="seed">置き方の番号</label>
+        <input type="number" id="seed" min="0" max="9999" step="1" value="0">
+        <button id="reseed">ランダム</button>
+      </div>
+      <label><input type="checkbox" id="usecap"> 3D 画面を撮った画像で見つける(試験的)</label>
+      <div>
+        <h2>ブロックの状態</h2>
+        <ul id="blocks" class="stats"></ul>
+        <div class="note">シミュレーション時間: <span class="mono" id="time">0.0 秒</span>、撮影 <span class="mono" id="shots">0</span> 回</div>
+      </div>
+      <div id="done" class="result"></div>
+      <div>
+        <h2>ロボットの記録</h2>
+        <pre id="log" class="log"></pre>
+      </div>
+    </aside>
+  </div>
+  <div class="cams" id="cams" hidden>
+    <figure>
+      <canvas id="cam"></canvas>
+      <figcaption id="camcap">天井カメラの画像。白い枠が見つけたブロックの輪郭、点が中心です(画像の右が机の +x、上が +y)。</figcaption>
+    </figure>
+    <figure>
+      <canvas id="mask"></canvas>
+      <figcaption>色で切り出した結果。「鮮やかで明るい画素」だけを、赤・青・緑・黄のどれに近いかで色分けしています。床・箱・アームは彩度が低いか色相が違うので消えます。</figcaption>
+    </figure>
+    <figure>
+      <h2 style="margin:0;font-family:var(--font-display);font-size:15px">見つけた結果</h2>
+      <table class="det">
+        <thead><tr><th>色</th><th>位置 x, y [cm]</th><th>向き</th><th>本当との差</th></tr></thead>
+        <tbody id="dets"></tbody>
+      </table>
+      <figcaption>「本当との差」は、シミュレーターが知っている本当の位置・向きとの差です(実機では分かりません)。ブロックは立方体で 90° 回すと同じ形なので、向きは -45°〜+45° にそろえます。</figcaption>
+    </figure>
+  </div>
+  <p class="note">元の Python 版(<span class="mono">vision_pick.py</span>)との違い: OpenCV は使わず、色の切り出し・連結成分・向きの推定を JavaScript の小さな実装で書き直しています(向きは輪郭を囲む長方形ではなく、全画素の 4 回回転モーメントから出しています)。カメラの画像は MuJoCo の光線(<span class="mono">mj_ray</span>)を画素ごとに飛ばして作り、深度も同じ光線から得ます。深度が分かるときは、ブロックの上の面だけで位置を測ります。手先の角度の計算は mink ではなく減衰つき最小二乗法です。乱数も別物なので、同じ番号でも置き方は Python 版と違います。</p>
+</div>
+<script type="module" src="view.js"></script>
+</body>
+</html>

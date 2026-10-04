@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SO-101 のデジタルツイン</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<script type="importmap">
+{ "imports": { "three": "../_web/vendor/three/three.module.js", "three/addons/": "../_web/vendor/three/" } }
+</script>
+<link rel="stylesheet" href="../_web/ui.css">
+<style>
+  .grid6 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 860px) { .grid6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .grid6 figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px; }
+  .grid6 figcaption { font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+  .grid6 canvas { width: 100%; height: auto; display: block; }
+  table.err { border-collapse: collapse; width: 100%; font-size: 13px; }
+  table.err th, table.err td { text-align: right; padding: 2px 6px; border-bottom: 1px solid var(--line); }
+  table.err th:first-child, table.err td:first-child { text-align: left; }
+  b.ok { color: var(--ok); }
+  .field { display: grid; gap: 2px; }
+  .field span.mono { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="../index.html">← サンプルアプリ一覧へ</a>
+    <h1>SO-101 のデジタルツイン</h1>
+    <p>これから買う小型ロボットアーム SO-101(6 つの関節をモーターで曲げて動く)を、先にコンピューターの中で動かします。ロボットとのやりとりは「いまの角度を読む(get_observation)」と「目標の角度を送る(send_action)」の 2 つだけ。実機用ソフト LeRobot と同じ形なので、ここで書いた制御は実機にもそのまま使えます。アームが赤いキューブを青いトレイへ運ぶ間、送った指令と読んだ角度がどれだけずれるか(追従誤差)を下のグラフで確かめられます。ドラッグで視点を回せます。</p>
+  </header>
+  <div id="status" class="status">読み込み中…</div>
+  <div id="app" hidden style="display:grid;gap:18px">
+    <div class="main">
+      <div class="stage"><canvas id="view"></canvas></div>
+      <aside class="panel">
+        <div class="row">
+          <button class="primary" id="play">スタート</button>
+          <button id="reset">最初から</button>
+        </div>
+        <div>
+          <label>速さ <input type="range" id="speed" min="0.5" max="4" step="0.5" value="1"> <span class="mono" id="speedv">1x</span></label>
+        </div>
+        <div class="field">
+          <label>キューブの前後(x) <input type="range" id="cx" min="0.18" max="0.30" step="0.01" value="0.24"></label>
+          <span class="mono" id="cxv"></span>
+        </div>
+        <div class="field">
+          <label>キューブの左右(y) <input type="range" id="cy" min="-0.02" max="0.16" step="0.01" value="0.10"></label>
+          <span class="mono" id="cyv"></span>
+        </div>
+        <div class="field">
+          <label>キューブの向き <input type="range" id="cyaw" min="-45" max="45" step="5" value="20"></label>
+          <span class="mono" id="cyawv"></span>
+        </div>
+        <div class="field">
+          <label>安全制限(1 回に動かせる量) <input type="range" id="cap" min="1" max="20" step="1" value="10"></label>
+          <span class="mono" id="capv"></span>
+          <span class="note">指令が現在の角度から離れすぎていたら、この量までに切ります(LeRobot の max_relative_target)。小さくすると安全ですが、指令に遅れてついてくるので誤差が増えます。</span>
+        </div>
+        <div>
+          <h2>作業の状態</h2>
+          <div class="note">いまの動作: <b id="phase">待機</b></div>
+          <div class="note">シミュレーション時間: <span class="mono" id="time">0.0 秒</span></div>
+          <div class="note">キューブ: <b id="cube">机の上</b></div>
+        </div>
+        <div id="done" class="result"></div>
+        <button id="csv" disabled>ログを CSV で保存</button>
+      </aside>
+    </div>
+    <section>
+      <div class="panel">
+        <h2>追従誤差(指令と読み値のずれ)</h2>
+        <table class="err">
+          <thead><tr><th>関節</th><th>最大 [度]</th><th>平均 [度]</th></tr></thead>
+          <tbody id="errs"></tbody>
+        </table>
+        <p class="note">グリッパーは、キューブをつかんでいる間、指が閉じきれないので指令と読み値が離れます(正常です)。そのため表には含めていません。</p>
+      </div>
+    </section>
+    <section>
+      <div class="grid6" id="charts"></div>
+      <p class="note">実線が send_action で送った指令、点線が get_observation で読んだ角度(0.088° 刻みに丸めています)。重なっていれば、モーターが指令どおりに動けています。グリッパーの縦軸は 0=閉、100=開。</p>
+    </section>
+    <section class="panel">
+      <h2>Python 版との違い</h2>
+      <p class="note">元は <span class="mono">sim_so101.py</span> と <span class="mono">pick_place.py</span>(Python)です。モーターの模擬・安全制限・指令の送り方・作業の手順は同じです。違いは次のとおりです。</p>
+      <ul class="note">
+        <li>逆運動学(手先の目標位置から関節の角度を逆算すること)は、Python 版では mink というライブラリを使っていました。こちらは自前の減衰つき最小二乗法(位置を優先し、向きは重みを軽くして合わせる)です。同じ目標に対する関節の動きは少し違います。</li>
+        <li>SO-101 は関節が 5 つ(+ グリッパー)なので、手先の位置と向きを自由には決められません。手先を真下へ向け、向きは肩の向きに合わせて回しています(Python 版と同じ考え方)。</li>
+        <li>描画用の細かい形状は省き、衝突用の箱と指の形状だけで描いています(物理は同じです)。そのため、見た目は Menagerie の SO-101 より角ばっています。</li>
+        <li>手首カメラの映像と動画の書き出しはありません。実機へ送る部分(LeRobot)も、ブラウザには入っていません。</li>
+        <li>ログの CSV は、画面のボタンからダウンロードします(Python 版は output/ に保存)。</li>
+        <li>Python 版にある、場面の端に置かれた緑の箱(動かさない)は置いていません。</li>
+      </ul>
+    </section>
+  </div>
+</div>
+<script type="module" src="view.js"></script>
+</body>
+</html>

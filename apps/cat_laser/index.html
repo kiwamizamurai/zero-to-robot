@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>レーザーで猫と遊ぶロボット</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+/* Layout: 部屋を真上から見た大きな画面(右上に横から見た図)、右に操作と観測値、下に「頭の中」6 枚と、光と猫の頭の距離のグラフ */
+:root {
+  --bg: #f3f1ec;
+  --panel: #fffdf8;
+  --ink: #26292b;
+  --muted: #6b6f70;
+  --line: #dcd8cf;
+  --rug: #e9dcc6;
+  --rug-line: #dccbae;
+  --cat: #4d4f55;
+  --cat-belly: #f1ece4;
+  --robot: #3c4a57;
+  --rod: #2b2f33;
+  --toy: #e0507a;
+  --toy2: #f2b233;
+  --box: #b48a5a;
+  --cam: #1f6fb2;
+  --accent: #1f6fb2;
+  --accent-soft: #e1ecf6;
+  --warn: #d9542f;
+  --ok: #3aa55d;
+  --m1: #e07b2f;
+  --m2: #8a5cc4;
+  --m3: #1f6fb2;
+  --font-display: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Noto Sans JP", sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b;
+    --rug: #2c2a26; --rug-line: #38352f; --cat: #c9ccd2; --cat-belly: #5a5d63; --robot: #9fb0c0; --rod: #d9dde1;
+    --toy: #f07ba0; --toy2: #f2c35a; --box: #8a6a46; --cam: #6fb0ea;
+    --accent: #6fb0ea; --accent-soft: #1d2e3e; --warn: #f07b52; --ok: #6cc47e; --m1: #f0a060; --m2: #b48ae6; --m3: #6fb0ea;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b;
+  --rug: #2c2a26; --rug-line: #38352f; --cat: #c9ccd2; --cat-belly: #5a5d63; --robot: #9fb0c0; --rod: #d9dde1;
+  --toy: #f07ba0; --toy2: #f2c35a; --box: #8a6a46; --cam: #6fb0ea;
+  --accent: #6fb0ea; --accent-soft: #1d2e3e; --warn: #f07b52; --ok: #6cc47e; --m1: #f0a060; --m2: #b48ae6; --m3: #6fb0ea;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+.wrap { max-width: 1160px; margin: 0 auto; padding: 22px 16px 44px; display: grid; gap: 18px; }
+header h1 { font-family: var(--font-display); font-weight: 800; font-size: 28px; margin: 0; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 66ch; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
+@media (max-width: 880px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.left { display: grid; gap: 8px; min-width: 0; }
+.stage { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+#sim { display: block; width: 100%; aspect-ratio: 4 / 3.5; max-width: 100%; }
+.say { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 9px 13px; font-size: 14px; line-height: 1.6; min-height: 3.4em; }
+.say b { color: var(--accent); }
+.panel { display: grid; gap: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.label { font-size: 12px; letter-spacing: .06em; color: var(--muted); font-weight: 500; }
+.seg { display: grid; gap: 6px; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label { border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px; cursor: pointer; font-size: 13.5px; display: grid; }
+.seg label small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.seg input:checked + label { border-color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+.seg input:checked + label small { font-weight: 400; }
+.seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+button { font: inherit; font-size: 14px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.big { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 700; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.row input { accent-color: var(--accent); }
+.row.check { flex-wrap: nowrap; align-items: flex-start; line-height: 1.5; }
+.row.check input { margin-top: 3px; flex: none; }
+select { font: inherit; font-size: 14px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+.meters { display: grid; gap: 6px; }
+.meter { display: grid; grid-template-columns: 6.2em 1fr 3em; gap: 8px; align-items: center; font-size: 13px; }
+.meter .bar { height: 9px; border-radius: 5px; background: var(--bg); overflow: hidden; }
+.meter .bar i { display: block; height: 100%; width: 0; border-radius: 5px; background: var(--accent); }
+.meter span:last-child { font-family: var(--font-mono); font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stats div { background: var(--bg); border-radius: 10px; padding: 7px 10px; display: grid; }
+.stats b { font-weight: 400; font-size: 12px; color: var(--muted); }
+.stats span { font-family: var(--font-mono); font-size: 18px; font-variant-numeric: tabular-nums; }
+.btns { display: grid; gap: 8px; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
+h2 { font-family: var(--font-display); font-weight: 800; font-size: 19px; margin: 0 0 4px; }
+.loop-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 10px; }
+.loop-head p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.cards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; list-style: none; padding: 0; margin: 0; }
+@media (max-width: 960px) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cards li { background: var(--panel); border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 11px; display: grid; gap: 3px; align-content: start; min-width: 0; }
+.cards li.active { border-color: var(--accent); background: var(--accent-soft); }
+.cards .n { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
+.cards strong { font-family: var(--font-display); font-size: 16px; }
+.cards .d { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.chartbox { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
+.chartbox h3 { margin: 0 0 4px; font-size: 13px; font-weight: 500; color: var(--muted); }
+#chart { display: block; width: 100%; height: 190px; }
+@media (max-width: 600px) { select, button { min-height: 44px; } .wrap { padding-left: 12px; padding-right: 12px; } }
+</style>
+<body>
+<div class="wrap">
+  <header>
+    <a href="../index.html" style="display:inline-block;padding:11px 0;font-size:13px;color:var(--muted);text-decoration:none">← サンプルアプリ一覧へ</a>
+    <h1>レーザーで猫と遊ぶロボット</h1>
+    <p>棚の上(高さ 1 m)に置いた首振り台が、2 つのサーボでレーザーの向きを変え、床に赤い点を描きます。カメラで猫を見て、点を獲物のように動かします。レーザーの点は<b>絶対に捕まえられない</b>のが、ほかのおもちゃとの大きな違いです。安全の仕組みと、遊びの終わらせ方を試してください。猫は安全の仕組みを試すための<b>テスト用の動く相手</b>(動きは仮のモデル)で、猫の気持ちは扱いません。ロボットが使うのは、カメラで測れる猫の位置と頭の向きだけです。</p>
+  </header>
+
+  <div class="main">
+    <div class="left">
+      <div class="stage"><canvas id="sim" aria-label="部屋を真上から見た画面。左下の棚のロボットからレーザーの点が床に当たり、猫が追う"></canvas></div>
+      <p class="say" id="say"></p>
+    </div>
+    <div class="panel">
+      <div>
+        <div class="label">点の動かし方</div>
+        <div class="seg" role="radiogroup" aria-label="点の動かし方">
+          <input type="radio" name="mode" id="m1" value="1"><label for="m1">1. ランダムに跳ぶ<small>0.35 秒ごとに、届く範囲のどこかへ跳ぶ(安い自動レーザーに多い)</small></label>
+          <input type="radio" name="mode" id="m2" value="2" checked><label for="m2">2. 獲物のまね<small>走る・止まる・そっと動く・ソファの陰に隠れる。猫から遠ざかる方へ逃げる</small></label>
+        </div>
+      </div>
+      <label class="row check"><input type="checkbox" id="avoidFace" checked><span>光が猫の頭の近くを通る場所には点を置かない(目に当てない)</span></label>
+      <label class="row check"><input type="checkbox" id="finale" checked><span>最後は本物のおもちゃの上で点を消す(10 分で終わり)</span></label>
+      <label class="row check"><input type="checkbox" id="quant" checked><span>サーボの 1° 刻みを再現する(SG90 は細かく止められない)</span></label>
+      <label class="row check"><input type="checkbox" id="watching" checked><span>人が見ている(見ていないときは消す)</span></label>
+      <div class="row"><label for="speed">速さ</label>
+        <select id="speed"><option value="1">実際の速さ</option><option value="3" selected>3 倍</option><option value="10">10 倍</option></select>
+      </div>
+      <hr>
+      <div class="stats" aria-live="polite">
+        <div><b>時間</b><span id="sTime">0:00</span></div>
+        <div><b>飛びかかった</b><span id="sPounce">0</span></div>
+        <div><b>押さえたのに何もない</b><span id="sEmpty">0</span></div>
+        <div><b>光が頭の近くを通った</b><span id="sFace">0</span></div>
+        <div><b>光と頭の一番近い距離</b><span id="sMin">—</span></div>
+        <div><b>終わったあと探しまわった</b><span id="sSearch">—</span></div>
+      </div>
+      <div class="btns">
+        <button class="big" id="bReset">最初からやり直す</button>
+        <button id="bCompare">設定を変えて比べる(12 分ぶんをすぐ計算)</button>
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <div class="loop-head">
+      <h2>ロボットの頭の中</h2>
+      <p>1 秒に 20 回、この 6 つを回しています。6 の安全は、ほかのどれよりも先に確かめます。</p>
+    </div>
+    <ol class="cards">
+      <li id="c1"><span class="n">1</span><strong>見る</strong><span class="d">カメラの画像から猫を見つけ、床の上の位置と、頭の向きを出す</span></li>
+      <li id="c2"><span class="n">2</span><strong>様子を読む</strong><span class="d">近づいてきた・低くかまえた・飛びかかった・飽きた、を見分ける</span></li>
+      <li id="c3"><span class="n">3</span><strong>点の行き先</strong><span class="d">猫から遠ざかる方向の床。光が猫の頭の近くを通る場所は選ばない</span></li>
+      <li id="c4"><span class="n">4</span><strong>角度に直す</strong><span class="d">床の点 (x, y) から、首振り(pan)と見下ろす角度(tilt)を計算する</span></li>
+      <li id="c5"><span class="n">5</span><strong>動かす</strong><span class="d">サーボに角度を送る。SG90 は約 1° 刻みでしか止まれない</span></li>
+      <li id="c6"><span class="n">6</span><strong>安全</strong><span class="d">上を向かない・猫が見えないときは消す・人がいないときは消す・時間で止める</span></li>
+    </ol>
+  </section>
+
+  <section class="chartbox">
+    <h3>レーザーの光の通り道と猫の頭の、2 秒ごとの一番近い距離(青)。赤い線 = 12 cm、これより近いと危ない。灰色の点線 = ひとつ前の設定</h3>
+    <canvas id="chart"></canvas>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  // ---------- 部屋(単位 m)。横 4 m × 縦 3 m。ロボットは左下の棚の上 ----------
+  const W = 4.0, H = 3.0;
+  const ROBOT = { x: 0.15, y: 0.15, h: 1.0 };   // レーザーの高さ 1 m
+  const TILT_MIN = 20 * Math.PI / 180;          // 水平より 20° 以上は上を向けない(物理的なストッパー)
+  const REACH = ROBOT.h / Math.tan(TILT_MIN);   // 届く距離 2.75 m
+  const SERVO_SPEED = 400 * Math.PI / 180;      // サーボの速さ [rad/s]
+  const DT = 0.05;
+  const SESSION = 10 * 60;
+  const SOFA = { x0: 2.2, y0: 1.85, x1: 3.3, y1: 2.35 };
+  const TOY = { x: 1.55, y: 1.05 };             // 本物のおもちゃ(ネズミ)
+  const BED = { x: 3.4, y: 0.5, r: 0.28 };      // 猫のベッド
+
+  let seed = 1;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const angWrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+  const mode = () => +document.querySelector('input[name="mode"]:checked').value;
+  const DEG = Math.PI / 180;
+
+  // ソファの陰(ロボットから見て、ソファの向こう側)は、点も届かないし、カメラにも猫が見えない
+  function behindSofa(x, y) {
+    if (x > SOFA.x0 && x < SOFA.x1 && y > SOFA.y0 && y < SOFA.y1) return true;
+    const dx = x - ROBOT.x, dy = y - ROBOT.y, n = Math.ceil(Math.hypot(dx, dy) / 0.03);
+    for (let k = 1; k < n; k++) { const px = ROBOT.x + dx * k / n, py = ROBOT.y + dy * k / n; if (px > SOFA.x0 && px < SOFA.x1 && py > SOFA.y0 && py < SOFA.y1) return true; }
+    return false;
+  }
+  const reachable = (x, y) => x > 0.08 && y > 0.08 && x < W - 0.08 && y < H - 0.08 && Math.hypot(x - ROBOT.x, y - ROBOT.y) < REACH - 0.02 && Math.hypot(x - ROBOT.x, y - ROBOT.y) > 0.5 && !behindSofa(x, y);
+
+  // ---------- 4. 角度に直す ----------
+  function ik(x, y) {
+    const dx = x - ROBOT.x, dy = y - ROBOT.y;
+    return { pan: Math.atan2(dy, dx), tilt: Math.atan2(ROBOT.h, Math.hypot(dx, dy)) };   // tilt = 見下ろす角度
+  }
+  function fk(pan, tilt) {
+    const t = Math.max(tilt, TILT_MIN), r = ROBOT.h / Math.tan(t);
+    return { x: ROBOT.x + r * Math.cos(pan), y: ROBOT.y + r * Math.sin(pan) };
+  }
+
+  let S;
+  function reset(opts = {}) {
+    seed = opts.seed || 5;
+    const q = ik(1.2, 1.0);
+    S = {
+      t: 0, pan: q.pan, tilt: q.tilt, cmd: { x: 1.2, y: 1.0 }, on: true, dot: { x: 1.2, y: 1.0, vx: 0, vy: 0 },
+      prey: { st: 'stop', t: 0, dur: 1.5, tx: 1.2, ty: 1.0, v: 0, next: 0, finale: 0 },
+      cat: { x: 2.4, y: 1.2, hd: Math.PI, st: 'watch', t: 0, interest: 0.6, energy: 1, px: 0, py: 0, crouch: 0, lost: 0 },
+      pounces: 0, empty: 0, face: 0, faceNear: false, faceEscape: false, catches: 0, card: 1, lastSay: -99, ended: false, hideOff: false, seen: true,
+      prevDot: { sp: 0, ang: 0, on: true }, events: [], monotony: 0, curveH: [], minHead: Infinity, searchAfter: 0,
+    };
+    say({
+      1: '点を <b>0.35 秒ごとにランダムな場所へ</b>跳ばします。猫は大はしゃぎしますが…',
+      2: '点を<b>獲物のように</b>動かします。走って、止まって、そっと動いて、ソファの陰に隠れる。猫が近づいたら逃げる。',
+    }[mode()]);
+  }
+  function say(h) { $('say').innerHTML = h; }
+  function sayOnce(h, gap = 5) { if (S.t - S.lastSay > gap) { say(h); S.lastSay = S.t; } }
+  const head = c => ({ x: c.x + Math.cos(c.hd) * 0.22, y: c.y + Math.sin(c.hd) * 0.22 });
+  const HEAD_Z = 0.22;   // 猫の頭(目)の高さ
+  // レーザーの光(ロボット → 床の点)が、猫の頭のまわり r m を通るか。光は上から斜めに来るので、
+  // 点が猫の向こう側にあると、光が頭の上を横切る
+  function nearFace(x, y, r) { return headDist(x, y) < r; }
+  function headDist(x, y) {
+    const h = head(S.cat), A = [ROBOT.x, ROBOT.y, ROBOT.h], B = [x, y, 0], Pp = [h.x, h.y, HEAD_Z];
+    const ab = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], ap = [Pp[0] - A[0], Pp[1] - A[1], Pp[2] - A[2]];
+    const t = clamp((ab[0] * ap[0] + ab[1] * ap[1] + ab[2] * ap[2]) / (ab[0] ** 2 + ab[1] ** 2 + ab[2] ** 2), 0, 1);
+    return Math.hypot(A[0] + ab[0] * t - Pp[0], A[1] + ab[1] * t - Pp[1], A[2] + ab[2] * t - Pp[2]);
+  }
+
+  // ---------- 3. 点の行き先 ----------
+  function pickTarget(minD, maxD, awayBias) {
+    const c = S.cat, base = Math.atan2(c.y - S.dot.y, c.x - S.dot.x) + Math.PI;   // 猫から遠ざかる向き
+    for (let k = 0; k < 60; k++) {
+      const a = awayBias ? base + (rnd() - 0.5) * 2.2 : rnd() * 2 * Math.PI, d = minD + rnd() * (maxD - minD);
+      const x = c.x + Math.cos(a) * d, y = c.y + Math.sin(a) * d;
+      if (!reachable(x, y)) continue;
+      if ($('avoidFace').checked && nearFace(x, y, 0.2)) continue;
+      return [x, y];
+    }
+    // 猫から遠ざかる方に行き先がなければ(部屋の隅など)、顔から離れた、届く場所ならどこでも
+    for (let k = 0; k < 200; k++) {
+      const x = 0.1 + rnd() * (W - 0.2), y = 0.1 + rnd() * (H - 0.2);
+      if (reachable(x, y) && !nearFace(x, y, 0.35)) return [x, y];
+    }
+    return [S.dot.x, S.dot.y];
+  }
+  function decide() {
+    const m = mode(), c = S.cat, p = S.prey, d = S.dot;
+    p.t += DT; S.card = 3;
+    // 6. 安全(いつも最初に)
+    S.seen = !behindSofa(c.x, c.y);
+    const end = S.t > SESSION;
+    if (!$('watching').checked) { S.on = false; S.card = 6; return; }
+    if (S.ended) { S.on = false; return; }
+    if (end && !p.finale) {
+      p.finale = 1; p.t = 0;
+      say($('finale').checked ? '10 分たちました。<b>点を本物のおもちゃ(ネズミ)の上へ</b>ゆっくり動かして、そこで消します。猫は最後に「本物」を捕まえて終われます。' : '10 分たちました。<b>点を消して終わり</b>にします。');
+    }
+    if (p.finale) {
+      if (!$('finale').checked) { S.on = false; S.ended = true; return; }
+      if (p.finale === 1) {               // おもちゃへ向かう
+        // 指令の点を少しずつおもちゃへ(サーボの 1° 刻みがあると、実際の点はおもちゃの近くまでしか行けないことがある)
+        const q = S.cmd, dx = TOY.x - q.x, dy = TOY.y - q.y, dd = Math.hypot(dx, dy);
+        if (dd < 0.005) { p.finale = 2; p.t = 0; }
+        S.on = true; return setCmd(q.x + dx / Math.max(dd, 1e-6) * Math.min(dd, 0.35 * DT), q.y + dy / Math.max(dd, 1e-6) * Math.min(dd, 0.35 * DT));
+      }
+      if (p.finale === 2) { S.on = true; if (p.t > 2.5) { S.on = false; S.ended = true; say('<b>点をおもちゃの上で消しました</b>。猫には「獲物がおもちゃに変わった」ように見えます。'); } return setCmd(TOY.x, TOY.y); }
+    }
+    if (!S.seen) { S.on = false; S.card = 6; sayOnce('<b>安全</b>: 猫がソファの陰に入って、カメラから見えません。どこに顔があるか分からないので、<b>レーザーを消します</b>。'); return; }
+    // 顔の近くに点があったら、消して、離れた場所へ動かす(離れるまでは消したまま)
+    if ($('avoidFace').checked && !S.faceEscape && nearFace(d.x, d.y, 0.12)) {
+      const t = pickTarget(0.6, 1.1, true); p.tx = t[0]; p.ty = t[1]; p.st = 'dart'; p.t = 0; p.dur = 1.0; S.faceEscape = true;
+      sayOnce('<b>安全</b>: 猫の顔が点に近づいたので、いったん消して、離れた場所へ動かします。');
+    }
+    if (S.faceEscape) {
+      S.card = 6; S.on = false;
+      if (!nearFace(d.x, d.y, 0.2) && servoAt(p.tx, p.ty)) S.faceEscape = false;
+      return setCmd(p.tx, p.ty);
+    }
+    // ブランキング: 遠くへ跳ぶ間は消す(跳ぶ途中で、点が猫の顔の上を横切らないように)
+    const blank = $('avoidFace').checked && Math.hypot(S.cmd.x - d.x, S.cmd.y - d.y) > 0.25;
+    S.on = p.st !== 'hide' && !blank;
+    if (m === 1) {
+      if (p.t > 0.35) {
+        p.t = 0;
+        for (let k = 0; k < 40; k++) {
+          const x = 0.1 + rnd() * (W - 0.2), y = 0.1 + rnd() * (H - 0.2);
+          if (!reachable(x, y) || ($('avoidFace').checked && nearFace(x, y, 0.2))) continue;
+          p.tx = x; p.ty = y; break;
+        }
+      }
+      return setCmd(p.tx, p.ty);
+    }
+    // 2. 獲物のまね
+    const dCat = Math.hypot(c.x - d.x, c.y - d.y);
+    if (c.st === 'pounce' && p.st !== 'dart' && dCat < 0.9) {
+      const t = pickTarget(0.6, 1.1, true); p.st = 'dart'; p.t = 0; p.dur = 0.6; p.tx = t[0]; p.ty = t[1];
+      sayOnce('飛びかかってきた → 点は<b>猫から遠ざかる方へ</b>走って逃げます(サーボの方が猫よりずっと速い)。', 3);
+    }
+    if (p.t > p.dur) nextPrey();
+    if (p.st === 'stop' || p.st === 'hide') return setCmd(d.x, d.y);
+    const vmax = { run: 0.9, creep: 0.15, dart: 1.8 }[p.st];
+    const dx = p.tx - d.x, dy = p.ty - d.y, dd = Math.hypot(dx, dy);
+    if (dd < 0.03 || servoAt(p.tx, p.ty)) { p.t = p.dur + 1; return setCmd(d.x, d.y); }
+    let nx = d.x + dx / dd * Math.min(dd, vmax * DT), ny = d.y + dy / dd * Math.min(dd, vmax * DT);
+    if ($('avoidFace').checked && nearFace(nx, ny, 0.15)) { p.t = p.dur + 1; return setCmd(d.x, d.y); }   // 光が頭の近くを通る道なら、止まって行き先を選び直す
+    return setCmd(nx, ny);
+  }
+  function nextPrey() {
+    const p = S.prey, c = S.cat;
+    p.t = 0;
+    const dCat = Math.hypot(c.x - S.dot.x, c.y - S.dot.y);
+    if (c.st === 'crouch' && dCat < 0.8) { const r = rnd(); if (r < 0.5) { p.st = 'stop'; p.dur = 0.8 + rnd() * 1.5; } else { p.st = 'creep'; p.dur = 2; const t = pickTarget(dCat + 0.1, dCat + 0.4, true); p.tx = t[0]; p.ty = t[1]; } return; }
+    let r = rnd();
+    const opts = [['run', 0.35], ['stop', 0.3], ['creep', 0.2], ['hide', 0.15]];
+    for (const [st, w] of opts) if ((r -= w) < 0) { p.st = st; break; }
+    if (p.st === 'run') { const t = pickTarget(0.5, 1.2, true); p.tx = t[0]; p.ty = t[1]; p.dur = 3; }
+    if (p.st === 'creep') { const t = pickTarget(0.4, 0.9, true); p.tx = t[0]; p.ty = t[1]; p.dur = 3; }
+    if (p.st === 'stop') p.dur = 0.6 + rnd() * 2;
+    if (p.st === 'hide') {
+      p.dur = 1 + rnd() * 1.5;   // 消えて、別の場所にあらわれる(物陰に隠れて、向こうから出てくる)
+      const t = pickTarget(0.7, 1.3, true); S.dot.x = t[0]; S.dot.y = t[1]; const q = ik(t[0], t[1]); S.pan = q.pan; S.tilt = q.tilt;
+    }
+  }
+  function setCmd(x, y) { S.cmd = { x, y }; }
+  // サーボが指令の角度に着いたか(1° 刻みがあると、床の点は指令の点にぴったりは来ないので、角度で見る)
+  function servoAt(x, y) { const q = ik(x, y); return Math.abs(angWrap(q.pan - S.pan)) < 0.02 && Math.abs(Math.max(q.tilt, TILT_MIN) - S.tilt) < 0.02; }
+
+  // ---------- 5. 動かす ----------
+  function servos() {
+    const q = ik(S.cmd.x, S.cmd.y), mv = SERVO_SPEED * DT;
+    S.pan += clamp(angWrap(q.pan - S.pan), -mv, mv);
+    S.tilt += clamp(q.tilt - S.tilt, -mv, mv);
+    S.tilt = Math.max(S.tilt, TILT_MIN);
+    let pan = S.pan, tilt = S.tilt;
+    if ($('quant').checked) { pan = Math.round(pan / DEG) * DEG; tilt = Math.round(tilt / DEG) * DEG; }
+    const f = fk(pan, tilt), d = S.dot;
+    d.vx = (f.x - d.x) / DT; d.vy = (f.y - d.y) / DT; d.x = f.x; d.y = f.y;
+    // 光が猫の頭(目)から 8 cm 以内を通ったか
+    const hdist = headDist(d.x, d.y);
+    if (S.on) S.minHead = Math.min(S.minHead, hdist);
+    // グラフ用: 2 秒ごとに、レーザーがついていた間の「光と頭の距離」の最小値
+    if (S.on && !['sleep', 'eat', 'hold'].includes(S.cat.st)) S.binMin = Math.min(S.binMin ?? Infinity, hdist);
+    if (Math.round(S.t / DT) % 40 === 0) { S.curveH.push([S.t, isFinite(S.binMin ?? Infinity) ? S.binMin : null]); S.binMin = Infinity; }
+    const nf = S.on && hdist < 0.08;
+    if (nf && !S.faceNear) S.face++;
+    S.faceNear = nf;
+  }
+
+  // ---------- 猫(簡単なモデル。猫じゃらしロボットと同じ考え方) ----------
+  function catStep() {
+    const c = S.cat, d = S.dot;
+    c.t += DT;
+    const visible = S.on;
+    const sp = Math.hypot(d.vx, d.vy), ang = Math.atan2(d.vy, d.vx), pv = S.prevDot;
+    let ev = 0;
+    if (visible) {
+      if (pv.sp < 0.05 && sp > 0.25) ev += 0.06;
+      if (!pv.on) ev += 0.08;
+      if (sp > 0.2 && pv.sp > 0.2 && Math.abs(angWrap(ang - pv.ang)) > 1.2) ev += 0.02;
+      if (sp > 3) ev += 0.02;              // 跳ぶ点は、とても刺激が強い
+    }
+    S.events.push(ev > 0 ? 1 : 0); if (S.events.length > 200) S.events.shift();
+    const evRate = S.events.reduce((a, b) => a + b, 0) / S.events.length * 20;
+    S.monotony = sp > 0.15 && evRate < 0.15 ? Math.min(1, S.monotony + DT / 20) : Math.max(0, S.monotony - DT / 8);
+    c.interest = clamp(c.interest + ev - DT * (0.008 + 0.03 * S.monotony), 0, 1);
+    S.prevDot = { sp, ang, on: visible };
+    c.lost = visible ? 0 : (c.lost || 0) + DT;
+    const recent = c.lost < 1.0 && c.last;          // 1 秒以内に見ていれば、最後に見た場所を追い続ける
+    const target = visible ? d : (c.st === 'search' || recent ? c.last : null);
+    const dx = (target ? target.x : c.x) - c.x, dy = (target ? target.y : c.y) - c.y, dist = Math.hypot(dx, dy);
+    if (visible) c.last = { x: d.x, y: d.y };
+    const face = Math.atan2(dy, dx);
+    const turn = (to, rate) => { c.hd += clamp(angWrap(to - c.hd), -rate * DT, rate * DT); };
+    const walk = v => {
+      const nx = clamp(c.x + Math.cos(c.hd) * v * DT, 0.15, W - 0.15), ny = clamp(c.y + Math.sin(c.hd) * v * DT, 0.15, H - 0.15);
+      if (!(nx > SOFA.x0 - 0.05 && nx < SOFA.x1 + 0.05 && ny > SOFA.y0 - 0.05 && ny < SOFA.y1 + 0.05)) { c.x = nx; c.y = ny; }
+    };
+    switch (c.st) {
+      case 'watch':
+        if (visible) turn(face, 3);
+        if (!visible && c.last && c.interest > 0.3 && S.prey.finale !== 2) { c.st = 'search'; c.t = 0; }
+        else if (c.interest > 0.45 && c.energy > 0.25 && visible) { c.st = 'stalk'; c.t = 0; }
+        else if (c.interest < 0.12) { c.st = 'bored'; c.t = 0; sayOnce('猫は<b>飽きて</b>しまいました。'); }
+        else if (c.energy < 0.2) { c.st = 'rest'; c.t = 0; sayOnce('猫は<b>疲れて</b>ひと休み。'); }
+        break;
+      case 'search':                     // 消えた点を探して歩きまわる
+        if (visible) { c.st = 'stalk'; c.t = 0; break; }
+        if (dist > 0.1) { turn(face, 3); walk(0.25); } else turn(c.hd + 2, 1.5);
+        if (S.ended) S.searchAfter += DT;
+        if (c.t > (S.ended ? 25 : 4)) { c.st = S.ended ? 'bored' : 'watch'; c.t = 0; if (S.ended) say('<b>点が消えたまま</b>なので、テスト用の猫は 25 秒探しまわります(獣医師が「レーザー遊びのあとに見られる」と挙げる様子をまねたもの)。レーザーの点は、最後まで一度も捕まえられません。'); }
+        break;
+      case 'stalk':
+        if (!visible && !recent) { c.st = 'watch'; c.t = 0; break; }
+        turn(face, 2.5);
+        // 興味が強いときは、走って追いかけ、近づいたら構えずにそのまま飛びかかる
+        if (c.interest > 0.7 && dist < 0.5 && sp > 0.4) { c.st = 'pounce'; c.t = 0; c.px = d.x; c.py = d.y; S.pounces++; c.energy = Math.max(0, c.energy - 0.04); break; }
+        if (dist > 0.45) walk(c.interest > 0.7 ? 1.0 : 0.28); else { c.st = 'crouch'; c.t = 0; c.crouch = 1 + rnd() * 2; }
+        if (c.interest < 0.3) { c.st = 'watch'; c.t = 0; }
+        if (c.energy < 0.2) { c.st = 'rest'; c.t = 0; }
+        break;
+      case 'crouch':
+        if (visible) turn(face, 3);
+        if (dist > 0.8) { c.st = 'stalk'; c.t = 0; break; }
+        if (c.t > c.crouch && visible && dist < 0.6 && (sp > 0.12 || c.t > c.crouch + 3)) {
+          c.st = 'pounce'; c.t = 0; c.px = d.x; c.py = d.y; S.pounces++; c.energy = Math.max(0, c.energy - 0.04);
+        }
+        if (!visible && c.t > 3) { c.st = 'watch'; c.t = 0; }
+        break;
+      case 'pounce': {
+        if (c.t < 0.06) { c.px = d.x; c.py = d.y; }
+        const tx = c.px - c.x, ty = c.py - c.y, td = Math.hypot(tx, ty);
+        c.hd = Math.atan2(ty, tx);
+        if (td > 0.05 && c.t < 0.45) walk(2.2);
+        else {
+          const onToy = Math.hypot(c.x - TOY.x, c.y - TOY.y) < 0.12 && S.ended && $('finale').checked;
+          if (onToy) {
+            c.st = 'hold'; c.t = 0; S.catches++;
+            say('<b>本物のおもちゃを捕まえた!</b> ここでおやつをあげて終わります。獣医師は、レーザー遊びは本物のおもちゃを捕まえて終わらせるよう勧めています。');
+          } else {
+            const onDot = Math.hypot(c.x - d.x, c.y - d.y) < 0.11 && visible;
+            if (onDot) { S.empty++; sayOnce('前足で点を<b>押さえた…けど、何もない</b>。レーザーは捕まえられません。', 4); }
+            c.st = 'recover'; c.t = 0; c.crouch = 1.5 + rnd() * 2.5; c.interest = clamp(c.interest + 0.03, 0, 1);
+          }
+        }
+        break;
+      }
+      case 'recover':
+        if (visible) turn(face, 3);
+        if (c.t > c.crouch) { c.st = c.energy < 0.2 ? 'rest' : 'watch'; c.t = 0; }
+        break;
+      case 'hold': if (c.t > 3) { c.st = 'eat'; c.t = 0; } break;
+      case 'eat': if (c.t > 6) { c.st = 'sleep'; c.t = 0; say('おやつを食べて、<b>寝ました</b>。狩りの 1 回分(追う → 捕まえる → 食べる → 休む)が終わりました。'); } break;
+      case 'sleep': break;
+      case 'bored':
+        if (!c.wander) c.wander = [BED.x + (rnd() - 0.5) * 0.2, BED.y + (rnd() - 0.5) * 0.2];
+        if (Math.hypot(c.wander[0] - c.x, c.wander[1] - c.y) > 0.1) { turn(Math.atan2(c.wander[1] - c.y, c.wander[0] - c.x), 3); walk(0.2); }
+        if (c.interest > 0.35 && !S.ended) { c.st = 'watch'; c.t = 0; c.wander = null; }
+        break;
+      case 'rest':
+        c.energy = clamp(c.energy + 0.02 * DT, 0, 1);
+        if (c.energy > 0.5) { c.st = 'watch'; c.t = 0; }
+        break;
+    }
+    // 最後: 点がおもちゃの上で消えたら、猫はおもちゃに忍び寄って飛びかかる
+    if (S.ended && $('finale').checked && S.prey.finale === 2 && !['toyhunt', 'pounce', 'hold', 'eat', 'sleep'].includes(c.st)) { c.st = 'toyhunt'; c.t = 0; }
+    if (c.st === 'toyhunt') {
+      const tdx = TOY.x - c.x, tdy = TOY.y - c.y, td = Math.hypot(tdx, tdy);
+      turn(Math.atan2(tdy, tdx), 3);
+      if (td > 0.4) walk(0.3);
+      else if (c.t > 2) { c.st = 'pounce'; c.t = 0.06; c.px = TOY.x; c.py = TOY.y; S.pounces++; }
+    }
+    if (c.st !== 'pounce') c.energy = clamp(c.energy + 0.0015 * DT, 0, 1);
+  }
+  function step() {
+    S.t += DT;
+    decide();
+    servos();
+    catStep();
+    if (S.cat.st === 'pounce') S.card = 2;
+  }
+
+  // ---------- 描く ----------
+  const cv = $('sim'), ctx = cv.getContext('2d'), ch = $('chart'), cx2 = ch.getContext('2d');
+  let Cc = {}, V = {}, CH = {};
+  function readColors() { const cs = getComputedStyle(document.documentElement); for (const k of ['ink', 'muted', 'line', 'panel', 'rug', 'rug-line', 'cat', 'cat-belly', 'robot', 'rod', 'toy', 'toy2', 'box', 'cam', 'accent', 'warn', 'ok', 'm1', 'm2', 'm3']) Cc[k] = cs.getPropertyValue('--' + k).trim(); }
+  function fit(c) { const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1; c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); return { w: r.width, h: r.height, dpr }; }
+  function resize() { V = fit(cv); V.s = Math.min((V.w - 24) / W, (V.h - 24 - 128) / H); V.ox = (V.w - W * V.s) / 2; V.oy = 12 + H * V.s; CH = fit(ch); }
+  const P = (x, y) => [V.ox + x * V.s, V.oy - y * V.s];
+  function drawCat(c) {
+    const p = P(c.x, c.y), s = V.s;
+    ctx.save(); ctx.translate(p[0], p[1]); ctx.rotate(-c.hd);
+    const crouch = c.st === 'crouch', stretch = c.st === 'pounce' ? 1.35 : 1, lie = ['sleep', 'rest', 'bored'].includes(c.st);
+    const bl = 0.2 * s * stretch, bw = (crouch ? 0.085 : 0.075) * s;
+    ctx.fillStyle = Cc.cat; ctx.strokeStyle = Cc.cat; ctx.lineWidth = 0.025 * s; ctx.lineCap = 'round';
+    const wig = crouch ? Math.sin(S.t * 14) * 0.6 : Math.sin(S.t * 2) * 0.3;
+    ctx.beginPath(); ctx.moveTo(-bl * 0.9, 0); ctx.quadraticCurveTo(-bl * 1.5, wig * bl * 0.6, -bl * 1.75, (lie ? 0.8 : wig) * bl * 0.5); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(0, 0, bl, bw, 0, 0, 7); ctx.fill();
+    const hx = bl * 0.95, hr = 0.065 * s;
+    ctx.beginPath(); ctx.arc(hx, 0, hr, 0, 7); ctx.fill();
+    for (const sgn of [-1, 1]) { ctx.beginPath(); ctx.moveTo(hx + hr * 0.2, sgn * hr * 0.5); ctx.lineTo(hx + hr * 1.25, sgn * hr * 1.05); ctx.lineTo(hx - hr * 0.4, sgn * hr * 1.0); ctx.fill(); }
+    ctx.fillStyle = Cc['cat-belly']; ctx.beginPath(); ctx.arc(hx + hr * 0.55, -hr * 0.35, hr * 0.16, 0, 7); ctx.arc(hx + hr * 0.55, hr * 0.35, hr * 0.16, 0, 7); ctx.fill();
+    ctx.restore();
+    const mark = { pounce: '!', crouch: '…', bored: '?', sleep: 'z z', eat: '♪', hold: '♥', rest: 'z', recover: '…?', search: '??' }[c.st];
+    if (mark) { ctx.fillStyle = c.st === 'hold' ? Cc.warn : Cc.ink; ctx.font = '800 18px "M PLUS Rounded 1c", sans-serif'; ctx.fillText(mark, p[0] + 0.1 * s, p[1] - 0.12 * s); }
+  }
+  function draw() {
+    const { w, h, dpr, s } = V;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = Cc.panel; ctx.fillRect(0, 0, w, h);
+    let a = P(0, H); ctx.fillStyle = Cc.rug; ctx.fillRect(a[0], a[1], W * s, H * s);
+    ctx.strokeStyle = Cc['rug-line']; ctx.lineWidth = 1;
+    for (let y = 0.25; y < H; y += 0.25) { const p = P(0, y); ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(p[0] + W * s, p[1]); ctx.stroke(); }
+    ctx.strokeStyle = Cc.ink; ctx.lineWidth = 3; ctx.strokeRect(a[0], a[1], W * s, H * s);
+    // 届く範囲(上を向けないので、2.75 m まで)
+    let o = P(ROBOT.x, ROBOT.y);
+    ctx.strokeStyle = Cc.warn; ctx.setLineDash([4, 5]); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(o[0], o[1], REACH * s, -Math.PI / 2, 0); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = Cc.warn; ctx.font = '500 11.5px "Noto Sans JP", sans-serif'; const lp = P(ROBOT.x + REACH * 0.94, ROBOT.y + REACH * 0.34); ctx.fillText('点が届く範囲(2.75 m)', lp[0] + 4, lp[1]);
+    // ソファの陰
+    ctx.fillStyle = Cc.muted; ctx.globalAlpha = 0.12; ctx.beginPath();
+    const far = (x, y) => [ROBOT.x + (x - ROBOT.x) * 3, ROBOT.y + (y - ROBOT.y) * 3];
+    const pts = [[SOFA.x0, SOFA.y1], far(SOFA.x0, SOFA.y1), far(SOFA.x1, SOFA.y0), [SOFA.x1, SOFA.y0]];
+    ctx.save(); ctx.beginPath(); ctx.rect(a[0], a[1], W * s, H * s); ctx.clip();
+    ctx.beginPath(); pts.forEach(([x, y], i) => { const q = P(x, y); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath(); ctx.fill(); ctx.restore();
+    ctx.globalAlpha = 1;
+    a = P(SOFA.x0, SOFA.y1); ctx.fillStyle = '#9aa7b3'; ctx.fillRect(a[0], a[1], (SOFA.x1 - SOFA.x0) * s, (SOFA.y1 - SOFA.y0) * s);
+    ctx.fillStyle = '#26292b'; ctx.font = '600 13px "Noto Sans JP", sans-serif'; ctx.fillText('ソファ', a[0] + 10, a[1] + 20);
+    ctx.fillStyle = Cc.muted; ctx.font = '500 11.5px "Noto Sans JP", sans-serif'; ctx.fillText('ソファの陰: 点が届かず、猫も見えない', a[0] + 10, a[1] + (SOFA.y1 - SOFA.y0) * s + 16);
+    // 猫のベッドと、本物のおもちゃ
+    o = P(BED.x, BED.y); ctx.fillStyle = Cc.box; ctx.globalAlpha = 0.45; ctx.beginPath(); ctx.arc(o[0], o[1], BED.r * s, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.fillStyle = Cc.ink; ctx.fillText('猫のベッド', o[0] - 26, o[1] + BED.r * s + 14);
+    o = P(TOY.x, TOY.y); ctx.fillStyle = '#8f8a84'; ctx.beginPath(); ctx.ellipse(o[0], o[1], 0.05 * s, 0.03 * s, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#8f8a84'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(o[0] - 0.05 * s, o[1]); ctx.quadraticCurveTo(o[0] - 0.09 * s, o[1] + 0.03 * s, o[0] - 0.11 * s, o[1] - 0.01 * s); ctx.stroke();
+    ctx.fillStyle = Cc.ink; ctx.fillText('本物のおもちゃ', o[0] - 34, o[1] + 0.07 * s + 8);
+    // ロボット(棚の上)
+    const rp = P(ROBOT.x, ROBOT.y);
+    ctx.fillStyle = Cc.robot; ctx.fillRect(rp[0] - 0.1 * s, rp[1] - 0.1 * s, 0.2 * s, 0.2 * s);
+    ctx.fillStyle = Cc.panel; ctx.font = '600 11px "Noto Sans JP", sans-serif'; ctx.fillText('棚', rp[0] - 6, rp[1] + 4);
+    ctx.fillStyle = Cc.ink; ctx.font = '500 12px "Noto Sans JP", sans-serif'; ctx.fillText('ロボット(高さ 1 m、カメラ付き)', rp[0] + 0.13 * s, rp[1] - 0.04 * s);
+    // レーザー
+    const d = S.dot, dp = P(d.x, d.y);
+    if (S.on) {
+      ctx.strokeStyle = '#e8202a'; ctx.globalAlpha = 0.25; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(rp[0], rp[1]); ctx.lineTo(dp[0], dp[1]); ctx.stroke(); ctx.globalAlpha = 1;
+      const g = ctx.createRadialGradient(dp[0], dp[1], 0, dp[0], dp[1], 12); g.addColorStop(0, 'rgba(255,40,40,1)'); g.addColorStop(0.35, 'rgba(255,40,40,.6)'); g.addColorStop(1, 'rgba(255,40,40,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(dp[0], dp[1], 12, 0, 7); ctx.fill();
+    } else if (!S.ended) {
+      ctx.strokeStyle = Cc.muted; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.arc(dp[0], dp[1], 7, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // 猫と、顔のまわりの立ち入り禁止
+    drawCat(S.cat);
+    const c = S.cat, hd = head(c), hp = P(hd.x, hd.y), cp = P(c.x, c.y);
+    if ($('avoidFace').checked && !['sleep', 'eat'].includes(c.st)) { ctx.strokeStyle = Cc.warn; ctx.setLineDash([3, 4]); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(hp[0], hp[1], 0.12 * s, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
+    if (S.faceNear) { ctx.fillStyle = Cc.warn; ctx.font = '800 14px "M PLUS Rounded 1c", sans-serif'; ctx.fillText('光が頭の近くを通っている!', hp[0] + 0.14 * s, hp[1] + 4); }
+    if (S.seen) {
+      ctx.strokeStyle = Cc.cam; ctx.lineWidth = 1.5; ctx.strokeRect(cp[0] - 0.22 * s, cp[1] - 0.2 * s, 0.44 * s, 0.4 * s);
+      ctx.fillStyle = Cc.cam; ctx.font = '600 11px "IBM Plex Mono", monospace';
+      ctx.fillText(`cat ${{ watch: 'watching', stalk: 'stalking', crouch: 'crouching', pounce: 'POUNCE', hold: 'caught', bored: 'bored', rest: 'resting', eat: 'eating', sleep: 'sleeping', recover: 'missed', search: 'searching', toyhunt: 'stalking toy' }[c.st]}`, cp[0] - 0.22 * s, cp[1] - 0.2 * s - 4);
+    } else { ctx.fillStyle = Cc.warn; ctx.font = '600 12px "Noto Sans JP", sans-serif'; ctx.fillText('カメラから見えない', cp[0] - 0.3 * s, cp[1] - 0.22 * s); }
+    if (!S.on && !S.ended) { ctx.fillStyle = Cc.warn; ctx.font = '800 14px "M PLUS Rounded 1c", sans-serif'; ctx.fillText(!$('watching').checked ? 'レーザー消灯(人が見ていない)' : !S.seen ? 'レーザー消灯(猫が見えない)' : S.prey.st === 'hide' ? '消灯中(隠れた)' : 'いったん消灯', rp[0] + 0.13 * s, rp[1] - 0.2 * s); }
+    drawSide();
+  }
+  function drawSide() {
+    const bw = Math.min(520, W * V.s), bh = 116, x0 = V.ox, top = V.oy + 10;
+    ctx.fillStyle = Cc.panel; ctx.strokeStyle = Cc.line; ctx.lineWidth = 1; ctx.fillRect(x0, top, bw, bh); ctx.strokeRect(x0, top, bw, bh);
+    const k = Math.min(60, (bw - 40) / 3.4), gx = x0 + 18, gy = top + bh - 16, r = Math.hypot(S.dot.x - ROBOT.x, S.dot.y - ROBOT.y);
+    ctx.strokeStyle = Cc.muted; ctx.beginPath(); ctx.moveTo(x0 + 6, gy); ctx.lineTo(x0 + bw - 6, gy); ctx.stroke();
+    ctx.fillStyle = Cc.robot; ctx.fillRect(gx - 6, gy - ROBOT.h * k, 12, ROBOT.h * k);
+    const ex = gx + Math.min(r, 3.3) * k;
+    if (S.on) { ctx.strokeStyle = '#e8202a'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(gx, gy - ROBOT.h * k); ctx.lineTo(ex, gy); ctx.stroke(); }
+    ctx.strokeStyle = Cc.warn; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(gx, gy - ROBOT.h * k); ctx.lineTo(gx + REACH * k, gy); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = Cc.ink; ctx.font = '500 11.5px "Noto Sans JP", sans-serif'; ctx.fillText('横から見た図(点線より上は向けない)', x0 + 8, top + 16);
+    { const c = S.cat, hd = head(c), ch = Math.hypot(hd.x - ROBOT.x, hd.y - ROBOT.y); if (ch < 3.3) { ctx.fillStyle = Cc.cat; ctx.beginPath(); ctx.arc(gx + ch * k, gy - HEAD_Z * k, 5, 0, 7); ctx.fill(); ctx.fillRect(gx + ch * k - 12, gy - HEAD_Z * k + 2, 14, HEAD_Z * k - 2); } }
+    ctx.font = '500 11px "IBM Plex Mono", monospace';
+    const dr = ROBOT.h / Math.sin(S.tilt) ** 2 * DEG;
+    ctx.fillText(`tilt ${(S.tilt / DEG).toFixed(1)}°  距離 ${r.toFixed(2)} m  1° で点が ${(dr * 100).toFixed(1)} cm 動く`, x0 + 8, top + 34);
+  }
+  const fmtT = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  function updateStats() {
+    const c = S.cat;
+    $('sMin').textContent = isFinite(S.minHead) ? `${(S.minHead * 100).toFixed(0)} cm` : '—';
+    $('sSearch').textContent = S.ended ? `${S.searchAfter.toFixed(0)} 秒` : '—';
+    $('sTime').textContent = fmtT(S.t); $('sPounce').textContent = S.pounces; $('sEmpty').textContent = S.empty; $('sFace').textContent = S.face;
+    for (let k = 1; k <= 6; k++) $('c' + k).classList.toggle('active', S.card === k || (S.card === 3 && (k === 1 || k === 4 || k === 5)));
+  }
+  let ghost = null;
+  function drawChart() {
+    const { w, h, dpr } = CH; cx2.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cx2.fillStyle = Cc.panel; cx2.fillRect(0, 0, w, h);
+    const Lm = 44, Rm = 12, T = 8, B = 26, X = t => Lm + t / 720 * (w - Lm - Rm), Y = c => T + (1 - c) * (h - T - B);
+    cx2.strokeStyle = Cc.line; cx2.fillStyle = Cc.muted; cx2.font = '11px "IBM Plex Mono", monospace'; cx2.lineWidth = 1;
+    for (const c of [0, 0.5, 1]) { cx2.beginPath(); cx2.moveTo(Lm, Y(c)); cx2.lineTo(w - Rm, Y(c)); cx2.stroke(); cx2.fillText(`${c} m`, 6, Y(c) + 4); }
+    for (let m = 0; m <= 12; m += 2) cx2.fillText(`${m}分`, X(m * 60) - 10, h - 8);
+    const line = (cu, col, dash, lw) => { if (!cu || cu.length < 2) return; cx2.strokeStyle = col; cx2.setLineDash(dash); cx2.lineWidth = lw; cx2.beginPath(); let pen = false; for (const [t, c] of cu) { if (c === null) { pen = false; continue; } const x = X(Math.min(t, 720)), y = Y(Math.min(c, 1)); pen ? cx2.lineTo(x, y) : cx2.moveTo(x, y); pen = true; } cx2.stroke(); cx2.setLineDash([]); };
+    if (ghost) line(ghost, Cc.muted, [4, 4], 1.2);
+    line(S.curveH, Cc.accent, [], 1.8);
+    cx2.strokeStyle = Cc.warn; cx2.lineWidth = 1.5; cx2.beginPath(); cx2.moveTo(Lm, Y(0.12)); cx2.lineTo(w - Rm, Y(0.12)); cx2.stroke();
+  }
+
+  // ---------- 操作 ----------
+  document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener('change', () => reset()));
+  for (const id of ['avoidFace', 'finale', 'quant']) $(id).addEventListener('change', () => { ghost = S.curveH; reset(); });
+  $('watching').addEventListener('change', () => say($('watching').checked ? '人が戻ってきたので、続けます。' : '<b>人が見ていないので、レーザーを消しました</b>。何かあっても止められないからです。'));
+  $('bReset').onclick = () => reset();
+  $('bCompare').onclick = () => {
+    const keep = { m: mode(), a: $('avoidFace').checked, f: $('finale').checked, q: $('quant').checked }, res = [];
+    // どれも「最後は本物のおもちゃ」「1° 刻み」「人が見ている」をオンにそろえ、違いは動かし方と顔を避けるかだけ。最後の 1 つだけ 1° 刻みをオフ
+    const base = { finale: true, quant: true, watching: true };
+    const cases = [['ランダム・顔を避けない', { ...base, mode: 1, avoidFace: false }], ['ランダム・顔を避ける', { ...base, mode: 1, avoidFace: true }],
+                   ['獲物のまね・顔を避けない', { ...base, mode: 2, avoidFace: false }], ['獲物のまね・顔を避ける', { ...base, mode: 2, avoidFace: true }],
+                   ['ランダム・顔を避ける・1° 刻みなし', { ...base, mode: 1, avoidFace: true, quant: false }]];
+    for (const [name, o] of cases) { const r = simulate(720, o); res.push(`${name}: 光が頭の近くを通った ${r.face} 回・一番近い ${(r.minHead * 100).toFixed(0)} cm・飛びかかり ${r.pounces}・押さえたのに何もない ${r.empty}`); }
+    $('m' + keep.m).checked = true; $('avoidFace').checked = keep.a; $('finale').checked = keep.f; $('quant').checked = keep.q; reset();
+    say('12 分の比較 ─ ' + res.join(' / '));
+  };
+  function simulate(sec, opts = {}) {
+    if (opts.mode) $('m' + opts.mode).checked = true;
+    for (const k of ['avoidFace', 'finale', 'quant', 'watching']) if (opts[k] !== undefined) $(k).checked = opts[k];
+    reset(opts);
+    const n = Math.round(sec / DT);
+    for (let k = 0; k < n; k++) step();
+    const c = S.cat;
+    return { pounces: S.pounces, empty: S.empty, face: S.face, catches: S.catches, minHead: S.minHead, searchAfter: S.searchAfter, state: c.st };
+  }
+  window.__laser = { simulate, state: () => S, step: n => { for (let k = 0; k < n; k++) step(); } };
+
+  readColors(); reset(); resize();
+  new ResizeObserver(resize).observe(cv); new ResizeObserver(resize).observe(ch);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+  let last = performance.now(), frame = 0, acc = 0;
+  function loop(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    acc = Math.min(acc + dt * +$('speed').value, 40 * DT * 10);   // 1 フレームで足りない分は次のフレームに持ち越す
+    while (acc >= DT && !window.__pause) { step(); acc -= DT; }
+    draw();
+    if (frame++ % 6 === 0) { updateStats(); drawChart(); }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

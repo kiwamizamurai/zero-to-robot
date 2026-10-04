@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>配膳ロボットの自律移動</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+/* Layout: 店内を真上から見た地図を大きく、その下に「ロボットの頭の中」4枚、右に行き先と設定 */
+:root {
+  --bg: #f3f1ec;
+  --panel: #fffdf8;
+  --ink: #26292b;
+  --muted: #6b6f70;
+  --line: #dcd8cf;
+  --floor: #efe4d2;
+  --floor-line: #e4d6c0;
+  --wall: #4a4f55;
+  --furniture: #b88a5a;
+  --furniture-top: #cfa577;
+  --robot: #f4f6f8;
+  --robot-edge: #3d4a55;
+  --accent: #1f6fb2;
+  --accent-soft: #e1ecf6;
+  --belief: #d9542f;
+  --path: #1f6fb2;
+  --search: #1f6fb2;
+  --person: #8c6bb1;
+  --joint: #f2b233;
+  --font-display: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Noto Sans JP", sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b;
+    --floor: #2a2621; --floor-line: #332e28; --wall: #a9b3bc; --furniture: #8a653f; --furniture-top: #a57c52;
+    --robot: #e8edf1; --robot-edge: #6d7c88; --accent: #6fb0ea; --accent-soft: #1d2e3e; --belief: #f07b52;
+    --path: #6fb0ea; --search: #6fb0ea; --person: #b597d8; --joint: #f2b233; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b;
+  --floor: #2a2621; --floor-line: #332e28; --wall: #a9b3bc; --furniture: #8a653f; --furniture-top: #a57c52;
+  --robot: #e8edf1; --robot-edge: #6d7c88; --accent: #6fb0ea; --accent-soft: #1d2e3e; --belief: #f07b52;
+  --path: #6fb0ea; --search: #6fb0ea; --person: #b597d8; --joint: #f2b233; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+.wrap { max-width: 1160px; margin: 0 auto; padding: 22px 16px 44px; display: grid; gap: 18px; }
+header h1 { font-family: var(--font-display); font-weight: 800; font-size: 28px; margin: 0; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 66ch; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 18px; align-items: start; }
+@media (max-width: 880px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.stagewrap { display: grid; gap: 8px; min-width: 0; }
+.stage { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+#sim { display: block; width: 100%; aspect-ratio: 5 / 3; max-width: 100%; touch-action: none; cursor: crosshair; }
+.say { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 9px 13px; font-size: 14px; line-height: 1.6; min-height: 3.5em; }
+.say b { color: var(--accent); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; width: 16px; height: 0; border-top: 3px solid; }
+.panel { display: grid; gap: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.group { display: grid; gap: 8px; }
+.label { font-size: 12px; letter-spacing: .06em; color: var(--muted); font-weight: 500; }
+.dest { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.dest button:first-child { grid-column: 1 / -1; }
+button { font: inherit; font-size: 14px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.big { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 700; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label { border: 1px solid var(--line); border-radius: 9px; padding: 6px; cursor: pointer; font-size: 13px; text-align: center; }
+.seg input:checked + label { border-color: var(--accent); background: var(--accent-soft); font-weight: 500; }
+.seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+.toggle { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
+.toggle input { accent-color: var(--accent); margin-top: 5px; }
+.toggle small { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.slider { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; align-items: center; }
+.slider .v { font-family: var(--font-mono); color: var(--accent); }
+.slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+.slider small { grid-column: 1 / -1; font-size: 12px; color: var(--muted); line-height: 1.5; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
+h2 { font-family: var(--font-display); font-weight: 800; font-size: 19px; margin: 0 0 4px; }
+.loop-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 10px; }
+.loop-head p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; list-style: none; padding: 0; margin: 0; }
+@media (max-width: 900px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+.cards li { background: var(--panel); border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; align-content: start; min-width: 0; transition: border-color .2s, background .2s; }
+.cards li.active { border-color: var(--accent); background: var(--accent-soft); }
+.cards .n { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
+.cards strong { font-family: var(--font-display); font-size: 17px; }
+.cards .d { font-size: 13px; color: var(--muted); line-height: 1.55; }
+.cards .live { font-family: var(--font-mono); font-size: 13px; background: var(--bg); border-radius: 8px; padding: 6px 10px; font-variant-numeric: tabular-nums; min-height: 3.3em; line-height: 1.55; }
+.real { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 880px) { .real { grid-template-columns: minmax(0, 1fr); } }
+.real section { min-width: 0; }
+.real h2 { margin-bottom: 10px; }
+.real ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.note { font-size: 13px; color: var(--muted); line-height: 1.6; margin: 0; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 500; }
+td.dir { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; color: var(--muted); }
+td code { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
+@media (max-width: 600px) { select, button { min-height: 44px; } .wrap { padding-left: 12px; padding-right: 12px; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <a href="../index.html" style="display:inline-block;padding:11px 0;font-size:13px;color:var(--muted);text-decoration:none">← サンプルアプリ一覧へ</a>
+    <h1>配膳ロボットの自律移動</h1>
+    <p>レストランで料理を運ぶロボットです。行き先を選ぶと、自分がどこにいるかを確かめながら、テーブルや人をよけて道を探し、その道に沿って走ります。お掃除ロボットや倉庫の運搬ロボットも同じしくみです。</p>
+  </header>
+
+  <div class="main">
+    <div class="stagewrap">
+      <div class="stage"><canvas id="sim" aria-label="レストランを真上から見た地図。配膳ロボットが自分の位置を推定しながらテーブルへ走る"></canvas></div>
+      <div class="legend">
+        <span><i style="border-color:var(--robot-edge)"></i>本当の位置</span>
+        <span><i style="border-color:var(--belief); border-top-style:dashed"></i>ロボットが思っている位置と、その自信のなさ(円)</span>
+        <span><i style="border-color:var(--path); border-top-style:dotted"></i>探した道</span>
+        <span><i style="border-color:var(--joint)"></i>見えているマーカー</span>
+      </div>
+      <p class="say" id="say"></p>
+    </div>
+
+    <aside class="panel">
+      <div class="group">
+        <div class="label">行き先</div>
+        <div class="dest">
+          <button data-goal="0">キッチンへ戻る</button>
+          <button data-goal="1">テーブル 1</button>
+          <button data-goal="2">テーブル 2</button>
+          <button data-goal="3">テーブル 3</button>
+          <button data-goal="4">テーブル 4</button>
+        </div>
+      </div>
+      <div class="group">
+        <div class="label">床をクリックすると</div>
+        <div class="seg">
+          <input type="radio" name="click" id="k-goal" value="goal" checked><label for="k-goal">そこへ行く</label>
+          <input type="radio" name="click" id="k-person" value="person"><label for="k-person">人を置く・どける</label>
+        </div>
+      </div>
+      <hr>
+      <label class="toggle"><input type="checkbox" id="useMarkers" checked><span>壁のマーカーで位置を直す<small>切ると、車輪の回転だけで自分の位置を数える。少しずつずれていく。</small></span></label>
+      <div class="slider"><label for="slip">床のすべりやすさ</label><span class="v" id="slipV"></span>
+        <input type="range" id="slip" min="0" max="1" step="0.05" value="0.5">
+        <small>すべると、車輪が回った分だけ進んだことにならない。</small></div>
+      <hr>
+      <button class="big" id="bReset">キッチンからやり直す</button>
+    </aside>
+  </div>
+
+  <div>
+    <div class="loop-head"><h2>ロボットの頭の中</h2><p>走っている間、この 4 つを同時に続けている</p></div>
+    <ol class="cards">
+      <li id="c1"><span class="n">1</span><strong>自分はどこ？</strong><span class="d">車輪が何回転したかを数えて、自分の位置を更新し続ける</span><span class="live" id="l1"></span></li>
+      <li id="c2"><span class="n">2</span><strong>ずれを直す</strong><span class="d">壁のマーカーが見えたら、その方向と距離から自分の位置を直す</span><span class="live" id="l2"></span></li>
+      <li id="c3"><span class="n">3</span><strong>道を探す</strong><span class="d">地図の上で、ぶつからずに行ける一番短い道を探す</span><span class="live" id="l3"></span></li>
+      <li id="c4"><span class="n">4</span><strong>道にそって走る</strong><span class="d">少し先の道の点を目指して、ハンドルを切る</span><span class="live" id="l4"></span></li>
+    </ol>
+  </div>
+
+  <div class="real">
+    <section>
+      <h2>本物のロボットでは</h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>やっていること</th><th>本物ではこうする</th><th>このリポジトリ</th></tr></thead>
+          <tbody>
+            <tr><td>地図</td><td>最初に一度、ロボットを手で押して店内を走らせ、レーザー距離センサー(LiDAR)で地図を作る(SLAM)</td><td class="dir">—</td></tr>
+            <tr><td>自分はどこ？ ずれを直す</td><td>車輪の回転と、LiDAR やカメラで見た壁・マーカーを組み合わせて推定する。ここではカルマンフィルタ(EKF)を使っている。本物ではパーティクルフィルタ(AMCL)も定番</td><td class="dir">04_estimation</td></tr>
+            <tr><td>道を探す</td><td>地図をマス目に区切って最短の道を探す(A* という方法)</td><td class="dir">05_planning</td></tr>
+            <tr><td>道にそって走る</td><td>少し先の点を目指してハンドルを切る(Pure Pursuit)。本物では人の動きも予測しながら速さを決める</td><td class="dir">03_control</td></tr>
+            <tr><td>ぜんぶまとめて</td><td>ROS 2 の <code>Nav2</code> というライブラリが、上の 4 つを部品として持っている。自作せずに設定だけで動かすことが多い</td><td class="dir">07 (予定)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section>
+      <h2>同じしくみで動いているもの</h2>
+      <ul>
+        <li>お掃除ロボット(部屋の地図を作り、自分の位置を知りながら掃除する)</li>
+        <li>倉庫で棚ごと運ぶ搬送ロボット(床のマーカーで位置を直す)</li>
+        <li>病院やホテルの配送ロボット</li>
+        <li>自動運転車(地図・GPS・カメラで自分の位置を推定し、道を計画して走る)</li>
+      </ul>
+      <p class="note" style="margin-top:10px">大事なのは、ロボットは<b>自分の本当の位置を直接は知らない</b>ということ。いつも「たぶんここ」という推定の上で道を探して走っています。推定がずれると、正しく計画してもぶつかります。</p>
+    </section>
+  </div>
+</div>
+
+<script>
+(() => {
+  // 単位は m。店内は 10 m × 6 m、左下が原点
+  const W = 10, H = 6, RR = 0.22, CELL = 0.2, INFLATE = 0.34, DT = 0.01;
+  const VMAX = 0.7, LOOK = 0.45, SENSE_RANGE = 4.0, FOV = 75 * Math.PI / 180;
+  const $ = id => document.getElementById(id);
+  const TAU = Math.PI * 2;
+  const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+  const gauss = () => { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * v); };
+
+  // ---------- 地図 ----------
+  const TABLES = [[4.2, 1.5], [4.2, 4.5], [7.4, 1.5], [7.4, 4.5]];
+  const FIXED = [
+    { kind: 'counter', x0: 0, y0: 1.2, x1: 1.0, y1: 4.8 },
+    ...TABLES.map(([x, y], i) => ({ kind: 'table', n: i + 1, x0: x - 0.6, y0: y - 0.45, x1: x + 0.6, y1: y + 0.45 })),
+    { kind: 'pillar', x0: 5.6, y0: 2.8, x1: 6.0, y1: 3.2 },
+  ];
+  const GOALS = [
+    { name: 'キッチン', p: [1.6, 3.0] },
+    { name: 'テーブル 1', p: [4.2, 2.45] }, { name: 'テーブル 2', p: [4.2, 3.55] },
+    { name: 'テーブル 3', p: [7.4, 2.45] }, { name: 'テーブル 4', p: [7.4, 3.55] },
+  ];
+  // 壁と柱の 4 面に貼ったマーカー
+  const MARKERS = [[2.5, 6], [5.0, 6], [7.5, 6], [10, 4.6], [10, 3.0], [10, 1.4], [7.5, 0], [5.0, 0], [2.5, 0], [0, 5.5], [0, 0.5], [5.8, 2.8], [5.8, 3.2], [5.6, 3.0], [6.0, 3.0]];
+  let people = [];
+
+  function distToRect(x, y, r) { const dx = Math.max(r.x0 - x, 0, x - r.x1), dy = Math.max(r.y0 - y, 0, y - r.y1); return Math.hypot(dx, dy); }
+  function clearance(x, y) {
+    let d = Math.min(x, y, W - x, H - y);
+    for (const r of FIXED) d = Math.min(d, distToRect(x, y, r));
+    for (const p of people) d = Math.min(d, Math.hypot(x - p[0], y - p[1]) - 0.25);
+    return d;
+  }
+  const NX = Math.round(W / CELL), NY = Math.round(H / CELL);
+  let occ = new Uint8Array(NX * NY);
+  function buildGrid() {
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++)
+      occ[j * NX + i] = clearance((i + 0.5) * CELL, (j + 0.5) * CELL) < INFLATE ? 1 : 0;
+  }
+  const cellOf = p => [Math.min(NX - 1, Math.max(0, Math.floor(p[0] / CELL))), Math.min(NY - 1, Math.max(0, Math.floor(p[1] / CELL)))];
+  const center = (i, j) => [(i + 0.5) * CELL, (j + 0.5) * CELL];
+  function freeLine(a, b) {
+    const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.05);
+    for (let k = 0; k <= n; k++) { const t = k / Math.max(1, n); const [i, j] = cellOf([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); if (occ[j * NX + i]) return false; }
+    return true;
+  }
+  function nearestFree(c) {
+    let best = null, bd = 1e9;
+    for (let dj = -4; dj <= 4; dj++) for (let di = -4; di <= 4; di++) {
+      const i = c[0] + di, j = c[1] + dj;
+      if (i < 0 || j < 0 || i >= NX || j >= NY || occ[j * NX + i]) continue;
+      const d = di * di + dj * dj; if (d < bd) { bd = d; best = [i, j]; }
+    }
+    return best;
+  }
+
+  // ---------- 3. 道を探す: A*(05_planning) ----------
+  let searched = [], searchedAt = 0;
+  function astar(from, to) {
+    let s = cellOf(from), g0 = cellOf(to);
+    if (occ[s[1] * NX + s[0]]) s = nearestFree(s);
+    if (occ[g0[1] * NX + g0[0]]) g0 = nearestFree(g0);
+    if (!s || !g0) return null;
+    const N = NX * NY, g = new Float64Array(N).fill(Infinity), came = new Int32Array(N).fill(-1), closed = new Uint8Array(N);
+    const si = s[1] * NX + s[0], gi = g0[1] * NX + g0[0];
+    const hfun = k => { const dx = Math.abs(k % NX - g0[0]), dy = Math.abs(Math.floor(k / NX) - g0[1]); return (dx + dy + (Math.SQRT2 - 2) * Math.min(dx, dy)) * CELL; };
+    const heap = [[hfun(si), si]]; g[si] = 0; searched = [];
+    const push = e => { heap.push(e); let k = heap.length - 1; while (k > 0) { const p = (k - 1) >> 1; if (heap[p][0] <= heap[k][0]) break; [heap[p], heap[k]] = [heap[k], heap[p]]; k = p; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let k = 0; for (;;) { const l = 2 * k + 1, r = l + 1; let m = k; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
+    while (heap.length) {
+      const [, k] = pop();
+      if (closed[k]) continue; closed[k] = 1; searched.push(k);
+      if (k === gi) break;
+      const x = k % NX, y = Math.floor(k / NX);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= NX || ny >= NY) continue;
+        const nk = ny * NX + nx; if (occ[nk] || closed[nk]) continue;
+        if (dx && dy && (occ[y * NX + nx] || occ[ny * NX + x])) continue;
+        const ng = g[k] + (dx && dy ? Math.SQRT2 : 1) * CELL;
+        if (ng < g[nk]) { g[nk] = ng; came[nk] = k; push([ng + hfun(nk), nk]); }
+      }
+    }
+    searchedAt = performance.now();
+    if (!closed[gi]) return null;
+    const cells = []; for (let k = gi; k !== -1; k = came[k]) cells.push(center(k % NX, Math.floor(k / NX)));
+    cells.reverse();
+    const raw = [from, ...cells.slice(1, -1), to];
+    // 見通せる点まで飛ばして、カクカクした道をまっすぐにする
+    const out = [raw[0]]; let a = 0;
+    while (a < raw.length - 1) { let b = raw.length - 1; while (b > a + 1 && !freeLine(raw[a], raw[b])) b--; out.push(raw[b]); a = b; }
+    return { pts: out, searched: searched.length, len: out.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - out[i][0], p[1] - out[i][1]), 0) };
+  }
+
+  // ---------- 状態 ----------
+  let truth, mu, Sig, path, goal, goalName, state, cmd, seen, trail, lastUpdate, drift;
+  function reset() {
+    people = []; buildGrid();
+    truth = [1.6, 3.0, 0]; mu = truth.slice(); Sig = [[1e-4, 0, 0], [0, 1e-4, 0], [0, 0, 1e-4]];
+    path = null; goal = null; goalName = ''; state = 'idle'; cmd = [0, 0]; seen = []; trail = []; lastUpdate = 0;
+    say('キッチンで待っています。<b>行き先</b>を選ぶか、床をクリックしてください。');
+  }
+  function say(h) { $('say').innerHTML = h; }
+  const slip = () => +$('slip').value, useMarkers = () => $('useMarkers').checked;
+
+  function go(p, name) {
+    if (state === 'crashed') { say('ぶつかって止まっています。「キッチンからやり直す」を押してください。'); return; }
+    if (clearance(p[0], p[1]) < RR + 0.02) { say('そこには物があって行けません。'); return; }
+    const plan = astar([mu[0], mu[1]], p);
+    if (!plan) { say(`${name}へ行く道が見つからない。人や物で道がふさがっているかも。`); state = 'idle'; path = null; return; }
+    path = plan; goal = p; goalName = name; state = 'moving';
+    say(`<b>${name}</b>へ。地図のマスを ${plan.searched} 個調べて、${plan.len.toFixed(1)} m の道を見つけた。`);
+  }
+  function replanIfNeeded() {
+    buildGrid();
+    if (state !== 'moving' || !path) return;
+    const pts = path.pts; let blocked = false;
+    for (let i = 0; i < pts.length - 1; i++) if (!freeLine(pts[i], pts[i + 1])) { blocked = true; break; }
+    if (!blocked) return;
+    const plan = astar([mu[0], mu[1]], goal);
+    if (!plan) { state = 'idle'; path = null; say('道がふさがって、行ける道がなくなった。人をどけてみてください。'); return; }
+    path = plan; say(`道に人が立った! 道を探し直して、よけて行く(${plan.len.toFixed(1)} m)。`);
+  }
+
+  // ---------- 4. 道にそって走る: Pure Pursuit(03_control) ----------
+  function purePursuit() {
+    const pts = path.pts, p = [mu[0], mu[1]];
+    // 道の上で一番近い点から、LOOK だけ先の点を探す
+    let bestD = 1e9, bi = 0, bt = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1], ab = [b[0] - a[0], b[1] - a[1]], L2 = ab[0] ** 2 + ab[1] ** 2 || 1e-9;
+      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1]) / L2));
+      const d = Math.hypot(a[0] + ab[0] * t - p[0], a[1] + ab[1] * t - p[1]);
+      if (d < bestD) { bestD = d; bi = i; bt = t; }
+    }
+    let remain = LOOK, i = bi, t = bt, target = pts[pts.length - 1];
+    while (i < pts.length - 1) {
+      const a = pts[i], b = pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]), left = L * (1 - t);
+      if (left >= remain) { const u = t + remain / (L || 1); target = [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]; break; }
+      remain -= left; i++; t = 0;
+    }
+    const end = pts[pts.length - 1], toEnd = Math.hypot(end[0] - p[0], end[1] - p[1]);
+    if (toEnd < 0.05) return null;
+    const alpha = wrap(Math.atan2(target[1] - p[1], target[0] - p[0]) - mu[2]);
+    if (Math.abs(alpha) > 0.9) return [0, Math.sign(alpha) * 1.6];
+    const v = VMAX * Math.min(1, toEnd / 0.6 + 0.15) * (1 - Math.abs(alpha) / 1.4);
+    const w = Math.max(-2, Math.min(2, 2 * v * Math.sin(alpha) / LOOK));
+    return [v, w];
+  }
+
+  // ---------- 1. 自分はどこ？(車輪の回転で予測) / 2. ずれを直す(マーカーで補正): EKF(04_estimation) ----------
+  function predict(d, dth) {
+    const th = mu[2] + dth / 2, c = Math.cos(th), s = Math.sin(th);
+    mu = [mu[0] + d * c, mu[1] + d * s, wrap(mu[2] + dth)];
+    const G = [[1, 0, -d * s], [0, 1, d * c], [0, 0, 1]];
+    // すべりの影響は走った距離に比例して積み重なる(分散が距離に比例するランダムウォーク)
+    const k = slip(), ad = Math.abs(d), sd = Math.sqrt((0.0004 + 0.003 * k) * ad) + 1e-5, sth = Math.sqrt((0.0008 + 0.012 * k) * ad) + 0.02 * Math.abs(dth) + 1e-5;
+    const Q = [[(sd * c) ** 2 + 1e-8, sd * sd * c * s, 0], [sd * sd * c * s, (sd * s) ** 2 + 1e-8, 0], [0, 0, sth * sth]];
+    Sig = add3(mul3(mul3(G, Sig), tr3(G)), Q);
+  }
+  function correct(z, m) {
+    const dx = m[0] - mu[0], dy = m[1] - mu[1], q = dx * dx + dy * dy, r = Math.sqrt(q);
+    const hz = [r, wrap(Math.atan2(dy, dx) - mu[2])];
+    const Hm = [[-dx / r, -dy / r, 0], [dy / q, -dx / q, -1]];
+    const Rm = [[0.05 ** 2, 0], [0, (2 * Math.PI / 180) ** 2]];
+    const SH = mul(Sig, tr(Hm)); // 3x2
+    const S = add(mul(Hm, SH), Rm); // 2x2
+    const det = S[0][0] * S[1][1] - S[0][1] * S[1][0];
+    const Si = [[S[1][1] / det, -S[0][1] / det], [-S[1][0] / det, S[0][0] / det]];
+    const K = mul(SH, Si); // 3x2
+    const y = [z[0] - hz[0], wrap(z[1] - hz[1])];
+    mu = [mu[0] + K[0][0] * y[0] + K[0][1] * y[1], mu[1] + K[1][0] * y[0] + K[1][1] * y[1], wrap(mu[2] + K[2][0] * y[0] + K[2][1] * y[1])];
+    const KH = mul(K, Hm);
+    Sig = mul([[1 - KH[0][0], -KH[0][1], -KH[0][2]], [-KH[1][0], 1 - KH[1][1], -KH[1][2]], [-KH[2][0], -KH[2][1], 1 - KH[2][2]]], Sig);
+  }
+  const mul = (A, B) => A.map(r => B[0].map((_, j) => r.reduce((s, v, k) => s + v * B[k][j], 0)));
+  const tr = A => A[0].map((_, j) => A.map(r => r[j]));
+  const add = (A, B) => A.map((r, i) => r.map((v, j) => v + B[i][j]));
+  const mul3 = mul, tr3 = tr, add3 = add;
+
+  function blockedRay(a, b) {
+    const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.08);
+    for (let k = 1; k < n - 1; k++) {
+      const t = k / n, x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t;
+      for (const r of FIXED) if (x > r.x0 && x < r.x1 && y > r.y0 && y < r.y1) return true;
+      for (const p of people) if (Math.hypot(x - p[0], y - p[1]) < 0.25) return true;
+    }
+    return false;
+  }
+  function sense() {
+    seen = [];
+    for (const m of MARKERS) {
+      const dx = m[0] - truth[0], dy = m[1] - truth[1], r = Math.hypot(dx, dy);
+      const b = wrap(Math.atan2(dy, dx) - truth[2]);
+      if (r > SENSE_RANGE || Math.abs(b) > FOV || blockedRay(truth, m)) continue;
+      seen.push(m);
+      if (useMarkers()) correct([r + gauss() * 0.05, b + gauss() * 2 * Math.PI / 180], m);
+    }
+  }
+
+  function step() {
+    if (state === 'moving') {
+      const c = purePursuit();
+      if (!c) {
+        state = 'idle'; cmd = [0, 0];
+        const err = Math.hypot(truth[0] - goal[0], truth[1] - goal[1]);
+        say(err < 0.12 ? `<b>${goalName}</b>に着いた。本当の位置とのずれは ${Math.round(err * 100)} cm。料理をどうぞ。`
+          : `<b>${goalName}</b>に着いた…つもり。でも本当は <b>${Math.round(err * 100)} cm ずれている</b>。自分の位置の推定がずれていたから。`);
+      } else cmd = c;
+    } else cmd = [0, 0];
+    if (state === 'crashed') cmd = [0, 0];
+    // 本物の動き: すべると、車輪の回転どおりには進まない
+    const k = slip(), [v, w] = cmd;
+    const d = v * DT, dth = w * DT;
+    const dTrue = d * (1 - 0.03 * k) + gauss() * Math.sqrt(0.002 * k * Math.abs(d));
+    const thTrue = dth + 0.06 * k * d + gauss() * Math.sqrt(0.006 * k * Math.abs(d)) + gauss() * 0.01 * Math.abs(dth);
+    const th = truth[2] + thTrue / 2;
+    const next = [truth[0] + dTrue * Math.cos(th), truth[1] + dTrue * Math.sin(th), wrap(truth[2] + thTrue)];
+    if (clearance(next[0], next[1]) < RR) {
+      state = 'crashed'; cmd = [0, 0]; path = null;
+      say('<b>ぶつかった!</b> ロボットが思っている位置と本当の位置がずれていたので、道のとおりに走ったつもりで家具に当たった。');
+    } else truth = next;
+    // 1. 車輪の回転(エンコーダ)で自分の位置を更新
+    if (Math.abs(d) > 0 || Math.abs(dth) > 0) predict(d, dth);
+    // 2. 10 回に 1 回、マーカーを探して位置を直す
+    lastUpdate += DT;
+    if (lastUpdate >= 0.1) { lastUpdate = 0; sense(); }
+  }
+
+  // ---------- 描画 ----------
+  const cv = $('sim'), ctx = cv.getContext('2d');
+  let C = {}, V = {};
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of ['bg', 'panel', 'ink', 'muted', 'line', 'floor', 'floor-line', 'wall', 'furniture', 'furniture-top', 'robot', 'robot-edge', 'accent', 'belief', 'path', 'search', 'person', 'joint'])
+      C[k] = cs.getPropertyValue('--' + k).trim();
+  }
+  function resize() {
+    const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    const s = Math.min(r.width / (W + 0.5), r.height / (H + 0.5));
+    V = { s, ox: (r.width - W * s) / 2, oy: (r.height + H * s) / 2, w: r.width, h: r.height, dpr };
+  }
+  const P = p => [V.ox + p[0] * V.s, V.oy - p[1] * V.s];
+  const toW = (x, y) => [(x - V.ox) / V.s, (V.oy - y) / V.s];
+
+  function robotShape(pose, fill, stroke, dashed) {
+    const [x, y] = P(pose), r = RR * V.s;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(-pose[2]);
+    if (dashed) ctx.setLineDash([5, 4]);
+    ctx.lineWidth = dashed ? 2 : 2.5; ctx.strokeStyle = stroke;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(r * 0.25, -r * 0.45); ctx.lineTo(r * 0.95, 0); ctx.lineTo(r * 0.25, r * 0.45);
+    if (fill) { ctx.fillStyle = stroke; ctx.fill(); } else ctx.stroke();
+    ctx.restore();
+  }
+  function draw(now) {
+    const { w, h, dpr, s } = V;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, w, h);
+    const o = P([0, H]);
+    ctx.fillStyle = C.floor; ctx.fillRect(o[0], o[1], W * s, H * s);
+    ctx.strokeStyle = C['floor-line']; ctx.lineWidth = 1;
+    for (let x = 0.5; x < W; x += 0.5) { const a = P([x, 0]), b = P([x, H]); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+    // A* が調べたマス(1.5 秒で消える)
+    const age = (now - searchedAt) / 1500;
+    if (age < 1 && searched.length) {
+      ctx.fillStyle = C.search; ctx.globalAlpha = 0.22 * (1 - age);
+      for (const k of searched) { const p = P([(k % NX) * CELL, (Math.floor(k / NX) + 1) * CELL]); ctx.fillRect(p[0], p[1], CELL * s - 1, CELL * s - 1); }
+      ctx.globalAlpha = 1;
+    }
+    // 家具
+    ctx.font = `700 ${Math.max(11, s * 0.22)}px "M PLUS Rounded 1c", sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const r of FIXED) {
+      const a = P([r.x0, r.y1]), bw = (r.x1 - r.x0) * s, bh = (r.y1 - r.y0) * s;
+      ctx.fillStyle = r.kind === 'pillar' ? C.wall : C.furniture;
+      ctx.beginPath(); ctx.roundRect(a[0], a[1], bw, bh, r.kind === 'table' ? 0.12 * s : 0.04 * s); ctx.fill();
+      if (r.kind !== 'pillar') { ctx.fillStyle = C['furniture-top']; ctx.beginPath(); ctx.roundRect(a[0] + 0.06 * s, a[1] + 0.06 * s, bw - 0.12 * s, bh - 0.12 * s, 0.08 * s); ctx.fill(); }
+      ctx.fillStyle = C.panel;
+      if (r.kind === 'table') ctx.fillText(`${r.n}`, a[0] + bw / 2, a[1] + bh / 2);
+      if (r.kind === 'counter') { ctx.save(); ctx.translate(a[0] + bw / 2, a[1] + bh / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('キッチン', 0, 0); ctx.restore(); }
+    }
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    // 人
+    for (const p of people) {
+      const c = P(p); ctx.fillStyle = C.person;
+      ctx.beginPath(); ctx.arc(c[0], c[1], 0.22 * s, 0, TAU); ctx.fill();
+      ctx.fillStyle = C.panel; ctx.beginPath(); ctx.arc(c[0], c[1], 0.09 * s, 0, TAU); ctx.fill();
+    }
+    // 壁
+    ctx.strokeStyle = C.wall; ctx.lineWidth = Math.max(4, 0.08 * s);
+    ctx.strokeRect(o[0], o[1], W * s, H * s);
+    // マーカー(AprilTag 風)
+    for (const m of MARKERS) {
+      const c = P(m), q = (m[0] > 0 && m[0] < W && m[1] > 0 && m[1] < H ? 0.12 : 0.16) * s;
+      ctx.fillStyle = C.panel; ctx.fillRect(c[0] - q / 2, c[1] - q / 2, q, q);
+      ctx.fillStyle = C.wall; ctx.fillRect(c[0] - q / 2 + 2, c[1] - q / 2 + 2, q - 4, q - 4);
+      ctx.fillStyle = C.panel; ctx.fillRect(c[0] - q / 6, c[1] - q / 6, q / 3, q / 3);
+    }
+    // 見えているマーカーへの線(カメラの視線)
+    if (state !== 'crashed') {
+      ctx.save(); ctx.strokeStyle = C.joint; ctx.lineWidth = 2; ctx.globalAlpha = useMarkers() ? 0.9 : 0.35;
+      const t = P(truth);
+      for (const m of seen) { const c = P(m); ctx.beginPath(); ctx.moveTo(t[0], t[1]); ctx.lineTo(c[0], c[1]); ctx.stroke(); }
+      ctx.restore();
+    }
+    // 走った跡
+    if (trail.length > 1) {
+      ctx.save(); ctx.strokeStyle = C['robot-edge']; ctx.globalAlpha = 0.35; ctx.lineWidth = 2; ctx.beginPath();
+      trail.forEach((p, i) => { const c = P(p); i ? ctx.lineTo(c[0], c[1]) : ctx.moveTo(c[0], c[1]); }); ctx.stroke(); ctx.restore();
+    }
+    // 探した道
+    if (path) {
+      ctx.save(); ctx.strokeStyle = C.path; ctx.lineWidth = 3; ctx.setLineDash([2, 7]); ctx.lineCap = 'round';
+      ctx.beginPath(); path.pts.forEach((p, i) => { const c = P(p); i ? ctx.lineTo(c[0], c[1]) : ctx.moveTo(c[0], c[1]); }); ctx.stroke(); ctx.restore();
+    }
+    if (goal) {
+      const c = P(goal); ctx.strokeStyle = C.path; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(c[0], c[1], 0.12 * s, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.arc(c[0], c[1], 0.04 * s, 0, TAU); ctx.fillStyle = C.path; ctx.fill();
+    }
+    // 本当の位置
+    robotShape(truth, C.robot, C['robot-edge'], false);
+    // ロボットが思っている位置と、自信のなさ(95% の範囲)
+    const a = Sig[0][0], b = Sig[0][1], d = Sig[1][1], tr2 = (a + d) / 2, dif = Math.sqrt(((a - d) / 2) ** 2 + b * b);
+    const l1 = tr2 + dif, l2 = Math.max(tr2 - dif, 0), ang = 0.5 * Math.atan2(2 * b, a - d);
+    const e = P(mu);
+    ctx.save(); ctx.translate(e[0], e[1]); ctx.rotate(-ang);
+    ctx.fillStyle = C.belief; ctx.globalAlpha = 0.14;
+    ctx.beginPath(); ctx.ellipse(0, 0, Math.max(3, 2.45 * Math.sqrt(l1) * s), Math.max(3, 2.45 * Math.sqrt(l2) * s), 0, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 0.9; ctx.strokeStyle = C.belief; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore();
+    robotShape(mu, null, C.belief, true);
+    if (state === 'crashed') {
+      const t = P(truth); ctx.fillStyle = C.belief; ctx.font = `800 ${Math.max(14, s * 0.3)}px "M PLUS Rounded 1c", sans-serif`;
+      ctx.fillText('ゴツン!', t[0] + RR * s, t[1] - RR * s);
+    }
+  }
+
+  function updateCards() {
+    const err = Math.hypot(truth[0] - mu[0], truth[1] - mu[1]);
+    const sd = Math.sqrt(Math.max(Sig[0][0], Sig[1][1]));
+    $('l1').innerHTML = `思っている位置 (${mu[0].toFixed(2)}, ${mu[1].toFixed(2)})<br>自信のなさ ±${Math.round(sd * 200)} cm / 本当とのずれ ${Math.round(err * 100)} cm`;
+    $('l2').innerHTML = !useMarkers() ? 'オフ(車輪の回転だけで数えている)<br>ずれはたまる一方' : seen.length ? `マーカーが ${seen.length} 個見えている<br>見るたびに位置を直す` : 'マーカーが見えない<br>車輪の回転だけで数えている';
+    $('l3').innerHTML = path ? `${goalName}まで ${path.len.toFixed(1)} m<br>調べたマス ${path.searched} 個 / 全部で ${NX * NY} 個` : '行き先が決まっていない<br>—';
+    $('l4').innerHTML = state === 'moving' ? `速さ ${cmd[0].toFixed(2)} m/秒<br>ハンドル ${cmd[1] > 0.05 ? '左' : cmd[1] < -0.05 ? '右' : 'まっすぐ'} ${Math.abs(cmd[1] * 180 / Math.PI).toFixed(0)}°/秒` : state === 'crashed' ? '止まっている(ぶつかった)<br>—' : '止まっている<br>—';
+    $('c1').classList.toggle('active', state === 'moving');
+    $('c2').classList.toggle('active', useMarkers() && seen.length > 0 && state === 'moving');
+    $('c3').classList.toggle('active', performance.now() - searchedAt < 1500);
+    $('c4').classList.toggle('active', state === 'moving');
+  }
+
+  // ---------- 入力 ----------
+  document.querySelectorAll('[data-goal]').forEach(b => b.addEventListener('click', () => { const g = GOALS[+b.dataset.goal]; go(g.p, g.name); }));
+  cv.addEventListener('pointerdown', e => {
+    const r = cv.getBoundingClientRect(), p = toW(e.clientX - r.left, e.clientY - r.top);
+    if (p[0] < 0 || p[1] < 0 || p[0] > W || p[1] > H) return;
+    if (document.querySelector('input[name="click"]:checked').value === 'goal') { go(p, 'クリックした場所'); return; }
+    const i = people.findIndex(q => Math.hypot(q[0] - p[0], q[1] - p[1]) < 0.3);
+    if (i >= 0) { people.splice(i, 1); replanIfNeeded(); if (state !== 'moving') say('人がどいた。'); return; }
+    if (Math.hypot(p[0] - truth[0], p[1] - truth[1]) < 0.55) { say('ロボットのすぐそばには置けません。'); return; }
+    people.push(p); replanIfNeeded();
+    if (state !== 'moving') say('人が立った。カメラで見つけて地図に書き込んだので、次に道を探すときはよけて通る。');
+  });
+  $('useMarkers').addEventListener('change', () => say(useMarkers() ? 'マーカーで位置を直すのを再開した。見えた瞬間に、推定の円が縮む。' : 'マーカーを使うのをやめた。車輪の回転だけで位置を数えるので、走るほど<b>自信のなさの円が大きく</b>なり、ずれがたまっていく。遠いテーブルに行かせてみて。'));
+  const upd = () => { $('slipV').textContent = slip() < 0.2 ? 'すべらない' : slip() < 0.7 ? 'ふつう' : 'つるつる'; };
+  $('slip').addEventListener('input', upd); upd();
+  $('bReset').onclick = reset;
+
+  // ---------- ループ ----------
+  reset(); readColors(); resize();
+  new ResizeObserver(resize).observe(cv);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+  new MutationObserver(readColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  let last = performance.now(), acc = 0, frame = 0;
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now; acc += dt;
+    while (acc >= DT) { step(); acc -= DT; }
+    if (frame % 3 === 0 && state === 'moving') { trail.push([truth[0], truth[1]]); if (trail.length > 400) trail.shift(); }
+    draw(now);
+    if (frame++ % 6 === 0) updateCards();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  // 開いた直後に、柱をよけて奥のテーブルへ料理を運んでみせる
+  setTimeout(() => { if (state === 'idle' && !goal) go(GOALS[3].p, GOALS[3].name); }, 900);
+})();
+</script>
+</body>
+</html>

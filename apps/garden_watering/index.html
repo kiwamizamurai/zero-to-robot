@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>家庭菜園の水やりロボット</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+/* Layout: 菜園を真上から見た大きな画面、右に操作と天気、下に「頭の中」6 枚と湿り気のグラフ */
+:root {
+  --bg: #f3f1ec;
+  --panel: #fffdf8;
+  --ink: #26292b;
+  --muted: #6b6f70;
+  --line: #dcd8cf;
+  --soil-dry: #c9a57a;
+  --soil-wet: #6e4f33;
+  --wood: #a77b4f;
+  --rail: #5b6670;
+  --head: #1f6fb2;
+  --water: #3a9ad9;
+  --leaf: #3f9a4a;
+  --leaf-sick: #b9a247;
+  --accent: #1f6fb2;
+  --accent-soft: #e1ecf6;
+  --warn: #d9542f;
+  --ok: #3aa55d;
+  --sun: #f2b233;
+  --font-display: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Noto Sans JP", sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b;
+    --soil-dry: #8a6c4a; --soil-wet: #4a3422; --wood: #7a5a39; --rail: #a9b3bc; --head: #6fb0ea; --water: #6fc0f0;
+    --leaf: #5fbf6a; --leaf-sick: #c9b257; --accent: #6fb0ea; --accent-soft: #1d2e3e; --warn: #f07b52; --ok: #6cc47e; --sun: #f2b233;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b;
+  --soil-dry: #8a6c4a; --soil-wet: #4a3422; --wood: #7a5a39; --rail: #a9b3bc; --head: #6fb0ea; --water: #6fc0f0;
+  --leaf: #5fbf6a; --leaf-sick: #c9b257; --accent: #6fb0ea; --accent-soft: #1d2e3e; --warn: #f07b52; --ok: #6cc47e; --sun: #f2b233;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+.wrap { max-width: 1160px; margin: 0 auto; padding: 22px 16px 44px; display: grid; gap: 18px; }
+header h1 { font-family: var(--font-display); font-weight: 800; font-size: 28px; margin: 0; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 66ch; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
+@media (max-width: 880px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.left { display: grid; gap: 8px; min-width: 0; }
+.stage { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+#sim { display: block; width: 100%; aspect-ratio: 2 / 1.15; max-width: 100%; }
+.say { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 9px 13px; font-size: 14px; line-height: 1.6; min-height: 3.4em; }
+.say b { color: var(--accent); }
+.panel { display: grid; gap: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.label { font-size: 12px; letter-spacing: .06em; color: var(--muted); font-weight: 500; }
+.clock { font-family: var(--font-mono); font-size: 22px; font-variant-numeric: tabular-nums; }
+.clock small { font-size: 13px; color: var(--muted); }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label { border: 1px solid var(--line); border-radius: 9px; padding: 7px 6px; cursor: pointer; font-size: 13.5px; text-align: center; }
+.seg input:checked + label { border-color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+.seg input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg3 { grid-template-columns: 1fr 1fr 1fr; }
+button { font: inherit; font-size: 14px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.big { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 700; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.row input { accent-color: var(--accent); }
+.row.check { flex-wrap: nowrap; align-items: flex-start; }
+.row.check input { margin-top: 4px; flex: none; }
+select { font: inherit; font-size: 14px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stats div { background: var(--bg); border-radius: 10px; padding: 7px 10px; display: grid; }
+.stats b { font-weight: 400; font-size: 12px; color: var(--muted); }
+.stats span { font-family: var(--font-mono); font-size: 18px; font-variant-numeric: tabular-nums; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
+h2 { font-family: var(--font-display); font-weight: 800; font-size: 19px; margin: 0 0 4px; }
+.loop-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 10px; }
+.loop-head p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.cards { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; list-style: none; padding: 0; margin: 0; }
+@media (max-width: 960px) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cards li { background: var(--panel); border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 11px; display: grid; gap: 3px; align-content: start; min-width: 0; }
+.cards li.active { border-color: var(--accent); background: var(--accent-soft); }
+.cards .n { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
+.cards strong { font-family: var(--font-display); font-size: 16px; }
+.cards .d { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.chartbox { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
+.chartbox h3 { margin: 0 0 4px; font-size: 13px; font-weight: 500; color: var(--muted); }
+#chart { display: block; width: 100%; height: 190px; }
+@media (max-width: 600px) { select, button { min-height: 44px; } .wrap { padding-left: 12px; padding-right: 12px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a href="../index.html" style="display:inline-block;padding:11px 0;font-size:13px;color:var(--muted);text-decoration:none">← サンプルアプリ一覧へ</a>
+    <h1>家庭菜園の水やりロボット</h1>
+    <p>菜園の上にレールを渡し、ノズルを前後左右に動かして株ごとに水をやるロボットです(オープンソースの FarmBot と同じ門型)。「毎朝決まった量をやるタイマー」と「土の湿り気を測って足りない株にだけやるセンサー式」で、2 週間の水の量と野菜の元気さを比べてください。</p>
+  </header>
+
+  <div class="main">
+    <div class="left">
+      <div class="stage"><canvas id="sim" aria-label="菜園を真上から見た画面。門型ロボットがノズルを動かして水をやる"></canvas></div>
+      <p class="say" id="say"></p>
+    </div>
+    <aside class="panel">
+      <div>
+        <div class="label">日時</div>
+        <div class="clock" id="clock"></div>
+      </div>
+      <div>
+        <div class="label">水やりのやり方</div>
+        <div class="seg">
+          <input type="radio" name="mode" id="m-timer" value="timer"><label for="m-timer">タイマー式</label>
+          <input type="radio" name="mode" id="m-sensor" value="sensor" checked><label for="m-sensor">センサー式</label>
+        </div>
+      </div>
+      <div>
+        <div class="label">天気</div>
+        <div class="seg seg3">
+          <input type="radio" name="wx" id="w-sun" value="sun" checked><label for="w-sun">晴れ</label>
+          <input type="radio" name="wx" id="w-hot" value="hot"><label for="w-hot">猛暑</label>
+          <input type="radio" name="wx" id="w-rain" value="rain"><label for="w-rain">雨</label>
+        </div>
+      </div>
+      <label class="row check"><input type="checkbox" id="fault"><span>3 番のセンサーが故障(いつも「乾いている」と出る)</span></label>
+      <div class="row"><label for="speed">時間の速さ</label>
+        <select id="speed"><option value="60">1 秒 = 1 分</option><option value="600">1 秒 = 10 分</option><option value="2400" selected>1 秒 = 40 分</option><option value="7200">1 秒 = 2 時間</option></select>
+      </div>
+      <hr>
+      <div class="stats">
+        <div><b>使った水</b><span id="sWater">0.0 L</span></div>
+        <div><b>ちょうどいい湿り気</b><span id="sBand">—</span></div>
+        <div><b>野菜の元気さ(平均)</b><span id="sHealth">—</span></div>
+        <div><b>タンクの残り</b><span id="sTank">—</span></div>
+      </div>
+      <button class="big" id="bReset">最初からやり直す</button>
+    </aside>
+  </div>
+
+  <div>
+    <div class="loop-head"><h2>ロボットの頭の中</h2><p>センサー式は、朝 7 時と夕方 5 時にこの 6 つを順にやる</p></div>
+    <ol class="cards">
+      <li id="c1"><span class="n">1</span><strong>測る</strong><span class="d">各株の土に挿した湿り気センサーを読む</span></li>
+      <li id="c2"><span class="n">2</span><strong>決める</strong><span class="d">乾きすぎの株だけ選び、足りない分の水の量を計算する</span></li>
+      <li id="c3"><span class="n">3</span><strong>道順</strong><span class="d">選んだ株を、近い順にまわる道順を決める</span></li>
+      <li id="c4"><span class="n">4</span><strong>動かす</strong><span class="d">X と Y のモーターで、ノズルを株の真上へ運ぶ</span></li>
+      <li id="c5"><span class="n">5</span><strong>水をやる</strong><span class="d">ポンプを決めた秒数だけ回す(量 ÷ 流量)</span></li>
+      <li id="c6"><span class="n">6</span><strong>確かめる</strong><span class="d">水をやったのに湿り気が上がらない株は、センサーの故障を疑う</span></li>
+    </ol>
+  </div>
+
+  <div class="chartbox">
+    <h3 id="chartTitle">湿り気の変化(株をクリックすると切り替わる)</h3>
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  // ---------- 菜園(単位 cm)。横 160 cm × 縦 80 cm のプランター枠 ----------
+  const BED = { w: 160, h: 80 };
+  const TYPES = {
+    tomato:  { name: 'トマト',   lo: 35, hi: 55, use: 1.25, color: '#d9542f' },
+    lettuce: { name: 'レタス',   lo: 45, hi: 65, use: 0.85, color: '#7ac46b' },
+    basil:   { name: 'バジル',   lo: 40, hi: 60, use: 0.9,  color: '#3f9a4a' },
+    pepper:  { name: 'ピーマン', lo: 38, hi: 58, use: 1.0,  color: '#2f7d3a' },
+  };
+  const LAYOUT = [
+    ['tomato', 25, 22], ['tomato', 65, 22], ['pepper', 105, 22], ['pepper', 140, 24],
+    ['lettuce', 22, 58], ['basil', 58, 60], ['lettuce', 98, 58], ['basil', 138, 60],
+  ];
+  const HOME = [6, 6];
+  const SPEED_CM_S = 8;          // ノズルの移動速度(実物のベルト駆動の門型と同じくらい)
+  const FLOW_ML_S = 20;          // ポンプの流量
+  const ML_PER_PCT = 18;         // 1 株のまわりの土を 1 % 湿らせるのに要る水 [ml]
+  const TIMER_ML = 250;          // タイマー式で毎朝やる量
+
+  let S;
+  function reset() {
+    S = {
+      t: 6 * 60, day: 1, water: 0, tank: 20000, refills: 0,
+      plants: LAYOUT.map(([type, x, y], i) => ({ i, type, x, y, m: 48 + (i % 3) * 3, health: 100, inBand: 0, samples: 0, hist: [], suspect: false, lastRead: 0 })),
+      head: [...HOME], task: null, queue: [], step: 0, pumping: 0, rainToday: false, sel: 0,
+      log: [], doneRounds: {},
+    };
+    say('朝 6 時。土の湿り気センサーが 8 株に 1 本ずつ挿してあります。センサー式は、朝 7 時と夕方 5 時に見回ります。');
+  }
+  const mode = () => document.querySelector('input[name="mode"]:checked').value;
+  const wx = () => document.querySelector('input[name="wx"]:checked').value;
+  function say(h) { $('say').innerHTML = h; }
+
+  // ---------- 土の湿り気の変化(1 分ごと) ----------
+  function sunAt(min) { const h = (min / 60) % 24; return h < 6 || h > 18 ? 0 : Math.sin((h - 6) / 12 * Math.PI); }
+  function weatherStep(dtMin) {
+    const sun = sunAt(S.t), w = wx();
+    const heat = w === 'hot' ? 1.9 : w === 'rain' ? 0.35 : 1.0;
+    for (const p of S.plants) {
+      const T = TYPES[p.type];
+      // 蒸発と、植物が吸う分。日差しが強いほど、土が湿っているほど速く減る
+      const loss = (0.004 + 0.03 * sun * heat) * T.use * (p.m / 50) * dtMin;
+      p.m = Math.max(5, p.m - loss);
+      if (w === 'rain') p.m = Math.min(95, p.m + 0.035 * dtMin * (1 - p.m / 100));
+      // 元気さ: ちょうどいい範囲なら少しずつ回復、乾きすぎ・湿りすぎで減る
+      if (p.m < T.lo - 8) p.health -= 0.012 * dtMin * ((T.lo - 8 - p.m) / 10 + 0.5);
+      else if (p.m > T.hi + 12) p.health -= 0.008 * dtMin * ((p.m - T.hi - 12) / 10 + 0.5);
+      else p.health += 0.004 * dtMin;
+      p.health = Math.max(0, Math.min(100, p.health));
+      p.samples += dtMin;
+      if (p.m >= T.lo && p.m <= T.hi) p.inBand += dtMin;
+    }
+  }
+  function readSensor(p) {
+    if ($('fault').checked && p.i === 2) return 8;   // 故障: いつも乾いていると出る
+    return p.m + (Math.random() - 0.5) * 3;          // ふだんも ±1.5 % くらいのばらつき
+  }
+
+  // ---------- 1〜3: 測る・決める・道順 ----------
+  function planRound(kind) {
+    let jobs = [];
+    if (kind === 'timer') {
+      jobs = S.plants.map(p => ({ p, ml: TIMER_ML }));
+      say(`朝 7 時。<b>タイマー式</b>なので、湿り気に関係なく 8 株すべてに ${TIMER_ML} ml ずつやります。`);
+    } else {
+      setCard(1);
+      const reads = S.plants.map(p => ({ p, r: readSensor(p) }));
+      for (const { p, r } of reads) p.lastRead = r;
+      if (wx() === 'rain') { say('見回りの時間ですが、<b>雨</b>なので水やりはお休み。センサーの値だけ記録しました。'); return []; }
+      const morning = Math.floor((S.t % 1440) / 60) < 12;
+      for (const { p, r } of reads) {
+        const T = TYPES[p.type];
+        if (p.suspect) {                               // 故障を疑っている株は、センサーを使わず、朝に決まった少量だけやる(安全側)
+          if (morning) jobs.push({ p, ml: TIMER_ML });
+          continue;
+        }
+        if (r < T.lo + 3) {                            // 下限に近い株だけ
+          const target = (T.lo + T.hi) / 2 + 3;
+          jobs.push({ p, ml: Math.round(Math.min(600, (target - r) * ML_PER_PCT)), before: r });
+        }
+      }
+      setCard(2);
+      if (!jobs.length) { say('見回り: どの株もちょうどいい湿り気。<b>今回は水やりなし</b>。'); return []; }
+      say(`見回り: ${jobs.length} 株が乾きぎみ。足りない分だけやります(${jobs.map(j => `${j.p.i + 1}番 ${j.ml} ml`).join('、')})。`);
+    }
+    // 近い順にまわる(最近傍法)
+    const route = [], left = [...jobs];
+    let cur = S.head;
+    while (left.length) {
+      left.sort((a, b) => Math.hypot(a.p.x - cur[0], a.p.y - cur[1]) - Math.hypot(b.p.x - cur[0], b.p.y - cur[1]));
+      const j = left.shift(); route.push(j); cur = [j.p.x, j.p.y];
+    }
+    setCard(3);
+    return route;
+  }
+
+  // ---------- 4〜6: 動かす・水をやる・確かめる ----------
+  function robotStep(dtSec) {
+    if (S.pumping > 0) {
+      const ml = Math.min(S.pumping, FLOW_ML_S * dtSec);
+      S.pumping -= ml; S.water += ml; S.tank -= ml;
+      if (S.tank < 1000) { S.tank += 19000; S.refills++; }   // 残り 1 L を切ったら、水位センサーが知らせて人が足す(ここでは自動で満タンに戻す)
+      const p = S.task.p;
+      p.m = Math.min(98, p.m + ml / ML_PER_PCT);
+      if (S.pumping <= 0) {
+        if (S.task.before !== undefined) {              // 6. 確かめる
+          setCard(6);
+          const after = readSensor(p);
+          if (after < S.task.before + 5) {
+            p.suspect = true;
+            say(`<b>${p.i + 1} 番の株</b>: ${S.task.ml} ml やったのに、センサーの値が上がらない(${S.task.before.toFixed(0)} % → ${after.toFixed(0)} %)。<b>センサーの故障を疑い、スマホに知らせました</b>。直るまでこの株だけ、センサーを使わずタイマー式と同じく毎朝 ${TIMER_ML} ml ずつやります。`);
+          }
+        }
+        S.task = null;
+      }
+      return;
+    }
+    if (!S.task) {
+      if (!S.queue.length) {                             // 終わったら定位置に戻る
+        const d = Math.hypot(HOME[0] - S.head[0], HOME[1] - S.head[1]);
+        if (d > 0.5) moveToward(HOME, dtSec);
+        return;
+      }
+      S.task = S.queue.shift();
+      setCard(4);
+    }
+    const p = S.task.p;
+    if (moveToward([p.x, p.y], dtSec)) { setCard(5); S.pumping = S.task.ml; }
+  }
+  function moveToward(goal, dtSec) {
+    // 門型ロボットは X と Y を別々のモーターで動かす。ここでは両方を同時に、それぞれ一定の速さで動かす
+    let done = true;
+    for (let k = 0; k < 2; k++) {
+      const d = goal[k] - S.head[k], step = SPEED_CM_S * dtSec;
+      if (Math.abs(d) <= step) S.head[k] = goal[k]; else { S.head[k] += Math.sign(d) * step; done = false; }
+    }
+    return done;
+  }
+  const busy = () => S.task || S.queue.length || S.pumping > 0 || Math.hypot(HOME[0] - S.head[0], HOME[1] - S.head[1]) > 0.5;
+
+  function setCard(n) { S.step = n; [...document.querySelectorAll('.cards li')].forEach((li, k) => li.classList.toggle('active', k + 1 === n)); }
+
+  // ---------- メインの時間の進み ----------
+  function tick(realDt) {
+    const rate = busy() ? 2 : +$('speed').value;   // ロボットが動いている間は、時間を 1 秒 = 2 秒に遅くして見せる
+    let simSec = realDt * rate;
+    while (simSec > 0) {
+      const dt = Math.min(simSec, 30);
+      simSec -= dt;
+      if (busy()) robotStep(dt);
+      const prev = S.t;
+      S.t += dt / 60;
+      weatherStep(dt / 60);
+      // 予定: タイマーは 7:00、センサー式は 7:00 と 17:00
+      for (const hh of mode() === 'timer' ? [7] : [7, 17]) {
+        const mark = hh * 60;
+        const dayStart = Math.floor(prev / 1440) * 1440;
+        const key = `${Math.floor(prev / 1440)}-${hh}`;
+        if (prev < dayStart + mark && S.t >= dayStart + mark && !S.doneRounds[key] && !busy()) {
+          S.doneRounds[key] = true;
+          S.queue = planRound(mode());
+        }
+      }
+      if (Math.floor(prev / 30) !== Math.floor(S.t / 30)) {   // 30 分ごとに記録
+        for (const p of S.plants) { p.hist.push([S.t, p.m]); if (p.hist.length > 14 * 48) p.hist.shift(); }
+      }
+      if (!busy() && S.step && S.step !== 0 && S.queue.length === 0) setCard(0);
+    }
+    S.day = Math.floor(S.t / 1440) + 1;
+  }
+
+  // ---------- 描画 ----------
+  const cv = $('sim'), ctx = cv.getContext('2d'), ch = $('chart'), cx = ch.getContext('2d');
+  let C = {}, V = {}, CV = {};
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of ['bg', 'panel', 'ink', 'muted', 'line', 'soil-dry', 'soil-wet', 'wood', 'rail', 'head', 'water', 'leaf', 'leaf-sick', 'accent', 'warn', 'ok', 'sun']) C[k] = cs.getPropertyValue('--' + k).trim();
+  }
+  function fit(c) { const r = c.getBoundingClientRect(), dpr = devicePixelRatio || 1; c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); return { w: r.width, h: r.height, dpr }; }
+  function resize() {
+    V = fit(cv); CV = fit(ch);
+    V.s = Math.min((V.w - 40) / BED.w, (V.h - 95) / BED.h); V.ox = (V.w - BED.w * V.s) / 2; V.oy = 50;
+  }
+  const P = (x, y) => [V.ox + x * V.s, V.oy + y * V.s];
+  function mix(a, b, t) {
+    const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+    const r = Math.round(((pa >> 16) & 255) * (1 - t) + ((pb >> 16) & 255) * t), g = Math.round(((pa >> 8) & 255) * (1 - t) + ((pb >> 8) & 255) * t), bl = Math.round((pa & 255) * (1 - t) + (pb & 255) * t);
+    return `rgb(${r},${g},${bl})`;
+  }
+  function draw(now) {
+    const { w, h, dpr, s } = V;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = C.panel; ctx.fillRect(0, 0, w, h);
+    // 空(時刻と天気)
+    const sun = sunAt(S.t), weather = wx();
+    ctx.fillStyle = C.muted; ctx.font = `500 13px "Noto Sans JP", sans-serif`;
+    ctx.fillText(weather === 'rain' ? '☂ 雨' : weather === 'hot' ? '☀ 猛暑' : sun > 0 ? '☀ 晴れ' : '☾ 夜', 14, 24);
+    ctx.fillStyle = C.sun; ctx.fillRect(80, 16, 120 * sun, 6); ctx.strokeStyle = C.line; ctx.strokeRect(80, 16, 120, 6);
+    ctx.fillStyle = C.muted; ctx.fillText('日差し', 206, 24);
+    // 枠と土
+    const o = P(0, 0);
+    ctx.fillStyle = C.wood; ctx.fillRect(o[0] - 8, o[1] - 8, BED.w * s + 16, BED.h * s + 16);
+    ctx.fillStyle = mix(C['soil-dry'], C['soil-dry'], 0); ctx.fillRect(o[0], o[1], BED.w * s, BED.h * s);
+    // 株ごとの土の色(湿っているほど濃い)
+    for (const p of S.plants) {
+      const c = P(p.x, p.y), t = Math.min(1, Math.max(0, (p.m - 15) / 60));
+      const g = ctx.createRadialGradient(c[0], c[1], 2, c[0], c[1], 16 * s);
+      g.addColorStop(0, mix(C['soil-dry'], C['soil-wet'], t)); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c[0], c[1], 16 * s, 0, 7); ctx.fill();
+    }
+    if (weather === 'rain') {
+      ctx.strokeStyle = C.water; ctx.globalAlpha = 0.35; ctx.lineWidth = 1.2;
+      for (let k = 0; k < 60; k++) { const x = o[0] + ((k * 97 + now / 7) % (BED.w * s)), y = o[1] + ((k * 53 + now / 3) % (BED.h * s)); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 3, y + 8); ctx.stroke(); }
+      ctx.globalAlpha = 1;
+    }
+    // 株
+    for (const p of S.plants) {
+      const T = TYPES[p.type], c = P(p.x, p.y), size = (6 + 6 * p.health / 100) * s;
+      const leaf = p.health > 60 ? C.leaf : mix(C['leaf-sick'], C['leaf-sick'], 0);
+      ctx.fillStyle = p.health > 60 ? leaf : C['leaf-sick'];
+      for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2 + p.i; ctx.beginPath(); ctx.ellipse(c[0] + Math.cos(a) * size * 0.55, c[1] + Math.sin(a) * size * 0.55, size * 0.5, size * 0.28, a, 0, 7); ctx.fill(); }
+      if (p.type === 'tomato' || p.type === 'pepper') { ctx.fillStyle = T.color; ctx.beginPath(); ctx.arc(c[0] + size * 0.2, c[1] - size * 0.1, size * 0.22, 0, 7); ctx.fill(); }
+      // センサーと番号
+      const sc = P(p.x + 8, p.y + 8);
+      ctx.fillStyle = p.suspect ? C.warn : C.rail; ctx.fillRect(sc[0] - 2, sc[1] - 6, 4, 12);
+      ctx.font = `700 ${Math.max(11, s * 3.4)}px "M PLUS Rounded 1c", sans-serif`; ctx.fillStyle = C.panel;
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 3; const lbl = `${p.i + 1}`; ctx.strokeText(lbl, c[0] - 4, c[1] + 5); ctx.fillText(lbl, c[0] - 4, c[1] + 5);
+      // 湿り気のゲージ
+      const gx = c[0] - 12 * s, gy = c[1] + 13 * s, gw = 24 * s;
+      ctx.fillStyle = C.line; ctx.fillRect(gx, gy, gw, 5);
+      ctx.fillStyle = C.ok; ctx.globalAlpha = 0.35; ctx.fillRect(gx + gw * T.lo / 100, gy, gw * (T.hi - T.lo) / 100, 5); ctx.globalAlpha = 1;
+      ctx.fillStyle = p.m < T.lo ? C.warn : p.m > T.hi ? C.water : C.ok; ctx.fillRect(gx + gw * p.m / 100 - 1.5, gy - 2, 3, 9);
+      if (p.i === S.sel) { ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(c[0], c[1], 17 * s, 0, 7); ctx.stroke(); }
+    }
+    // 門型ロボット: X のレール 2 本、Y の梁、ノズルの台
+    ctx.fillStyle = C.rail;
+    ctx.fillRect(o[0] - 8, o[1] - 14, BED.w * s + 16, 5); ctx.fillRect(o[0] - 8, o[1] + BED.h * s + 9, BED.w * s + 16, 5);
+    const hx = P(S.head[0], 0)[0], hy = P(0, S.head[1])[1];
+    ctx.globalAlpha = 0.85; ctx.fillRect(hx - 4, o[1] - 18, 8, BED.h * s + 36); ctx.globalAlpha = 1;
+    ctx.fillStyle = C.head; ctx.beginPath(); ctx.roundRect(hx - 9, hy - 9, 18, 18, 4); ctx.fill();
+    if (S.pumping > 0) {
+      ctx.strokeStyle = C.water; ctx.lineWidth = 2;
+      for (let k = 0; k < 10; k++) { const a = k / 10 * 7 + now / 120, r = 6 + ((now / 30 + k * 5) % 14); ctx.beginPath(); ctx.arc(hx + Math.cos(a) * r, hy + Math.sin(a) * r, 1.6, 0, 7); ctx.stroke(); }
+    }
+    ctx.fillStyle = C.muted; ctx.font = `500 12px "IBM Plex Mono", monospace`;
+    ctx.fillText(`X ${S.head[0].toFixed(0)} cm  Y ${S.head[1].toFixed(0)} cm`, o[0], o[1] + BED.h * s + 34);
+  }
+
+  function drawChart() {
+    const { w, h, dpr } = CV, p = S.plants[S.sel], T = TYPES[p.type];
+    cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, w, h);
+    const L = 36, R = 10, top = 8, B = 22, pw = w - L - R, ph = h - top - B;
+    const t1 = Math.max(S.t, 3 * 1440), t0 = t1 - 3 * 1440;
+    const X = t => L + (t - t0) / (t1 - t0) * pw, Y = m => top + (1 - m / 100) * ph;
+    cx.fillStyle = C.ok; cx.globalAlpha = 0.15; cx.fillRect(L, Y(T.hi), pw, Y(T.lo) - Y(T.hi)); cx.globalAlpha = 1;
+    cx.strokeStyle = C.line; cx.fillStyle = C.muted; cx.font = '10px "IBM Plex Mono", monospace';
+    for (const m of [0, 25, 50, 75, 100]) { cx.beginPath(); cx.moveTo(L, Y(m)); cx.lineTo(w - R, Y(m)); cx.stroke(); cx.fillText(`${m}%`, 2, Y(m) + 3); }
+    for (let d = Math.ceil(t0 / 1440); d * 1440 <= t1; d++) { const x = X(d * 1440); cx.beginPath(); cx.moveTo(x, top); cx.lineTo(x, top + ph); cx.stroke(); cx.fillText(`${d + 1}日目`, x + 3, h - 6); }
+    cx.strokeStyle = C.accent; cx.lineWidth = 2; cx.beginPath(); let first = true;
+    for (const [t, m] of p.hist) { if (t < t0) continue; const x = X(t), y = Y(m); first ? cx.moveTo(x, y) : cx.lineTo(x, y); first = false; }
+    cx.stroke();
+    $('chartTitle').textContent = `${p.i + 1} 番(${T.name})の湿り気の変化。緑の帯がちょうどいい範囲(${T.lo}〜${T.hi} %)。株をクリックすると切り替わる`;
+  }
+
+  function updateStats() {
+    const d = Math.floor(S.t / 1440) + 1, hh = Math.floor((S.t % 1440) / 60), mm = Math.floor(S.t % 60);
+    $('clock').innerHTML = `${d} 日目 ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} <small>${busy() ? 'ロボット作業中' : ''}</small>`;
+    $('sWater').textContent = `${(S.water / 1000).toFixed(1)} L`;
+    const band = S.plants.reduce((a, p) => a + p.inBand, 0) / Math.max(1, S.plants.reduce((a, p) => a + p.samples, 0));
+    $('sBand').textContent = `${Math.round(band * 100)} %`;
+    $('sHealth').textContent = `${Math.round(S.plants.reduce((a, p) => a + p.health, 0) / S.plants.length)} 点`;
+    $('sTank').textContent = `${Math.max(0, S.tank / 1000).toFixed(1)} L` + (S.refills ? `(補充 ${S.refills} 回)` : '');
+  }
+
+  // ---------- 入力 ----------
+  cv.addEventListener('pointerdown', e => {
+    const r = cv.getBoundingClientRect(), x = (e.clientX - r.left - V.ox) / V.s, y = (e.clientY - r.top - V.oy) / V.s;
+    let best = -1, bd = 1e9;
+    S.plants.forEach((p, i) => { const d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = i; } });
+    if (bd < 20) { S.sel = best; const p = S.plants[best], T = TYPES[p.type]; say(`${p.i + 1} 番は<b>${T.name}</b>。ちょうどいい湿り気は ${T.lo}〜${T.hi} %、いまは ${p.m.toFixed(0)} %(センサーの値 ${p.lastRead ? p.lastRead.toFixed(0) + ' %' : 'まだ読んでいない'})。${p.suspect ? '<b>センサーの故障を疑っている</b>ので、毎朝 ' + TIMER_ML + ' ml ずつやっています。' : ''}`); }
+  });
+  document.querySelectorAll('input[name="mode"]').forEach(el => el.addEventListener('change', () => say(mode() === 'timer'
+    ? '<b>タイマー式</b>: 毎朝 7 時に、8 株すべてへ同じ量をやります。センサーは見ません。いちばん安くて簡単な方法。'
+    : '<b>センサー式</b>: 朝 7 時と夕方 5 時に湿り気を測り、乾きぎみの株にだけ、足りない分をやります。')));
+  document.querySelectorAll('input[name="wx"]').forEach(el => el.addEventListener('change', () => say(wx() === 'hot'
+    ? '<b>猛暑</b>: 土がいつもの 2 倍近い速さで乾きます。タイマー式は決まった量しかやらないので、トマトなど水をよく吸う株から乾いていきます。'
+    : wx() === 'rain' ? '<b>雨</b>: 土が自然に湿っていきます。タイマー式は雨でも水をやるので、湿りすぎになります。センサー式はお休みします。'
+    : '<b>晴れ</b>: ふつうの天気。')));
+  $('fault').addEventListener('change', () => say($('fault').checked
+    ? '<b>3 番のセンサーが故障</b>: 本当は湿っていても、いつも「乾いている」と出ます。センサーを信じすぎると水をやりすぎます。ロボットは水をやったあとに値を確かめて、おかしいと気づけるか。'
+    : '3 番のセンサーを直しました。'));
+  $('bReset').onclick = () => { reset(); };
+
+  // ---------- ループ ----------
+  reset(); readColors(); resize();
+  new ResizeObserver(resize).observe(cv); new ResizeObserver(resize).observe(ch);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+  let last = performance.now(), frame = 0;
+  function loop(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    tick(dt);
+    draw(now);
+    if (frame++ % 6 === 0) { drawChart(); updateStats(); }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  // テストや比較のために、外から速く回せるようにしておく(画面には影響しない)
+  window.__garden = {
+    simulate(days, opts = {}) {
+      if (opts.mode) document.getElementById('m-' + opts.mode).checked = true;
+      if (opts.weather) document.getElementById('w-' + opts.weather).checked = true;
+      if (opts.fault !== undefined) document.getElementById('fault').checked = opts.fault;
+      reset();
+      const end = S.t + days * 1440;
+      while (S.t < end) {
+        if (opts.weatherByDay) { const w = opts.weatherByDay[Math.floor(S.t / 1440)]; if (w) document.getElementById('w-' + w).checked = true; }
+        tick(0.05);
+      }
+      const band = S.plants.reduce((a, p) => a + p.inBand, 0) / S.plants.reduce((a, p) => a + p.samples, 0);
+      return { water_L: S.water / 1000, band: band, health: S.plants.reduce((a, p) => a + p.health, 0) / 8, healths: S.plants.map(p => Math.round(p.health)), suspect: S.plants.filter(p => p.suspect).map(p => p.i + 1), refills: S.refills };
+    },
+  };
+})();
+</script>
+</body>
+</html>

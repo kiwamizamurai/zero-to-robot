@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zero-to-robot サンプルアプリ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+:root {
+  --bg: #f3f1ec; --panel: #fffdf8; --ink: #26292b; --muted: #6b6f70; --line: #dcd8cf; --accent: #1f6fb2;
+  --font-display: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Noto Sans JP", sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #16191c; --panel: #1e2226; --ink: #e8e9ea; --muted: #9aa0a4; --line: #30363b; --accent: #6fb0ea; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.7; }
+.wrap { max-width: 880px; margin: 0 auto; padding: 28px 16px 48px; display: grid; gap: 20px; }
+h1 { font-family: var(--font-display); font-weight: 800; font-size: 28px; line-height: 1.35; margin: 0; text-wrap: balance; }
+header p { margin: 6px 0 0; color: var(--muted); max-width: 64ch; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 14px; }
+@media (max-width: 480px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+.card { display: grid; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; color: inherit; text-decoration: none; }
+.card:hover { border-color: var(--accent); }
+.card h2 { font-family: var(--font-display); font-size: 19px; margin: 0; color: var(--accent); }
+.card p { margin: 0; }
+.tag { font-size: 12px; color: var(--muted); }
+h2 { font-family: var(--font-display); font-size: 18px; margin: 10px 0 0; }
+.lead { margin: 0; color: var(--muted); font-size: 14px; }
+.count { font-size: 13px; color: var(--muted); }
+footer { color: var(--muted); font-size: 13px; }
+html { -webkit-text-size-adjust: 100%; }
+@media (max-width: 600px) {
+  .wrap { padding: 18px 12px 36px; gap: 16px; }
+  h1 { font-size: 22px; }
+  h2 { font-size: 17px; }
+  .card { padding: 14px; min-height: 44px; }
+  .card h2 { font-size: 17px; }
+}
+footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>zero-to-robot サンプルアプリ</h1>
+    <p>ゼロからロボット工学を学ぶ過程で作った、ブラウザで動く 17 のシミュレーションです。インストール不要で、カードを選ぶとそのまま動かせます。</p>
+  </header>
+  <section>
+    <h2>A. まず触る</h2>
+    <p class="lead">ブラウザで開くだけの、いちばん手軽なシミュレーター。</p>
+  </section>
+  <div class="cards">
+    <a class="card" href="tidy_arm/index.html">
+      <h2>お片付けロボットアーム</h2>
+      <p>2 関節のアームがブロックを箱に片付ける。逆運動学と、なめらかな動きの作り方を 6 ステップで追える。</p>
+      <span class="tag">逆運動学 / 軌道生成</span>
+    </a>
+    <a class="card" href="balance_bot/index.html">
+      <h2>倒れない二輪ロボット</h2>
+      <p>車輪 2 つで立つ倒立振子。センサーが遅れると倒れる様子を、押したり遅らせたりして試せる。</p>
+      <span class="tag">LQR 制御 / むだ時間</span>
+    </a>
+    <a class="card" href="delivery_robot/index.html">
+      <h2>配膳ロボットの自律移動</h2>
+      <p>自分の位置を推定しながら、障害物をよけて道を探し、その道を走る。</p>
+      <span class="tag">A* / Pure Pursuit / EKF</span>
+    </a>
+  </div>
+  <section>
+    <h2>B. 本物のアームとドローン</h2>
+    <p class="lead">実在するロボットのモデルを、物理エンジン MuJoCo(WebAssembly)でそのまま動かす。</p>
+  </section>
+  <div class="cards">
+    <a class="card" href="panda_pick_place/index.html">
+      <h2>本物のアームでお片付け</h2>
+      <p>7 関節の Franka Panda が、指と摩擦だけでブロックをつかんで箱へ運ぶ。</p>
+      <span class="tag">MuJoCo / 微分 IK / 零空間</span>
+    </a>
+    <a class="card" href="panda_rrt/index.html">
+      <h2>障害物をよけて腕を動かす</h2>
+      <p>壁にぶつからない道を、ランダムな木の枝で自分で探す。</p>
+      <span class="tag">RRT-Connect / 衝突判定</span>
+    </a>
+    <a class="card" href="panda_impedance/index.html">
+      <h2>力を加減してなぞる</h2>
+      <p>机が 1 cm ずれても、ばねのように力を加減して線を描く。</p>
+      <span class="tag">インピーダンス制御 / トルク制御</span>
+    </a>
+    <a class="card" href="drone_flight/index.html">
+      <h2>ドローンを飛ばす</h2>
+      <p>横向きの力を出せないドローンを、傾けて進ませる 3 段の制御。突風にも耐える。</p>
+      <span class="tag">カスケード制御 / 姿勢制御</span>
+    </a>
+  </div>
+  <section>
+    <h2>C. カメラで見る・測り直す</h2>
+    <p class="lead">画像から位置を求め、ずれたカメラを測り直す(sim2real)。</p>
+  </section>
+  <div class="cards">
+    <a class="card" href="panda_vision_pick/index.html">
+      <h2>カメラで見つけて片付ける</h2>
+      <p>天井カメラの画像から、ブロックの位置と向きを求めてつかむ。</p>
+      <span class="tag">色検出 / 位置・向きの推定</span>
+    </a>
+    <a class="card" href="panda_calibration/index.html">
+      <h2>カメラの取り付けがずれていたら?</h2>
+      <p>カメラが数 cm ずれるだけでつかめない。手の印で位置を測り直す。</p>
+      <span class="tag">キャリブレーション / Kabsch 法</span>
+    </a>
+  </div>
+  <section>
+    <h2>D. 学習で覚えさせる</h2>
+    <p class="lead">学習は事前に済ませ、ブラウザでは学習済みの結果を再生する。</p>
+  </section>
+  <div class="cards">
+    <a class="card" href="panda_imitation/index.html">
+      <h2>お手本から学ぶ</h2>
+      <p>手順書をお手本にして、ネットに真似させる。お手本の数と揺れで成功率が変わる。</p>
+      <span class="tag">模倣学習 / Behavior Cloning</span>
+    </a>
+    <a class="card" href="rl_balance/index.html">
+      <h2>強化学習で倒立振子を立たせる</h2>
+      <p>お手本なし。「倒れなければ 1 点」だけで、立ち方を覚えていく。</p>
+      <span class="tag">強化学習 / 報酬 / 方策</span>
+    </a>
+  </div>
+  <section>
+    <h2>E. 実機へ</h2>
+    <p class="lead">これから買うロボットを、先にシミュレーターで動かす。</p>
+  </section>
+  <div class="cards">
+    <a class="card" href="so101_twin/index.html">
+      <h2>SO-101 のデジタルツイン</h2>
+      <p>実機と同じ口(send_action / get_observation)を持つ、SO-101 のシミュレーター。</p>
+      <span class="tag">デジタルツイン / 追従誤差</span>
+    </a>
+  </div>
+  <section>
+    <h2>F. 家庭菜園</h2>
+    <p class="lead">作る前に、全体をシミュレーターで通してみる。</p>
+  </section>
+  <div class="cards">
+    <a class="card" href="garden_watering/index.html">
+      <h2>家庭菜園の水やりロボット</h2>
+      <p>土の湿り気を測って、足りない株にだけ水をやる。センサーの故障にも気づく。</p>
+      <span class="tag">しきい値制御 / 故障検知</span>
+    </a>
+    <a class="card" href="tomato_harvest/index.html">
+      <h2>ミニトマト収穫ロボット</h2>
+      <p>カメラで赤い実だけを見分けて、へたを切ってかごへ運ぶ。</p>
+      <span class="tag">色検出 / アプローチ姿勢</span>
+    </a>
+  </div>
+  <section>
+    <h2>G. 家の中で使うロボット</h2>
+    <p class="lead">作る前に、全体をシミュレーターで通してみる。</p>
+  </section>
+  <div class="cards">
+    <a class="card" href="robot_vacuum/index.html">
+      <h2>ロボット掃除機</h2>
+      <p>ぶつかったら曲がる、渦巻き、地図を作って往復。同じ部屋で比べる。</p>
+      <span class="tag">SLAM / 被覆経路計画</span>
+    </a>
+    <a class="card" href="cat_teaser/index.html">
+      <h2>猫じゃらしロボット</h2>
+      <p>測れる反応だけから、猫に合う動かし方を学ぶ。</p>
+      <span class="tag">バンディット / UCB</span>
+    </a>
+    <a class="card" href="cat_laser/index.html">
+      <h2>レーザーで猫と遊ぶロボット</h2>
+      <p>光が猫の頭の近くを通らないように、3 次元で距離を計算する。</p>
+      <span class="tag">安全設計 / 幾何計算</span>
+    </a>
+  </div>
+  <footer>ソースと数式ノートは <a href="https://github.com/kiwamizamurai/zero-to-robot">GitHub リポジトリ</a> にあります。</footer>
+</div>
+</body>
+</html>

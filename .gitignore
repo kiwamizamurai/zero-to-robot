@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+.claude/
+
+*/notes.pdf
+*/notes_*.pdf
+site/
+node_modules/
+
+# 重くなるので、動画と画像はコミットしない(notes_pages/ は notes.md が埋め込むので除く)
+*.gif
+*.mp4
+apps/**/output/
+apps/**/images/
+*.pdf
+*.rrd

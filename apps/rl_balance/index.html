@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>強化学習で倒立振子を立たせる</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<script type="importmap">
+{ "imports": { "three": "../_web/vendor/three/three.module.js", "three/addons/": "../_web/vendor/three/" } }
+</script>
+<link rel="stylesheet" href="../_web/ui.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="../index.html">← サンプルアプリ一覧へ</a>
+    <h1>強化学習で倒立振子を立たせる</h1>
+    <p>台車の上に棒が立っています。ロボットが知っているのは「倒れずにいられたら 1 点」という報酬だけ。でたらめに動いては倒れるうちに、棒を立て続ける動かし方を自分で見つけます。方策(いまの状態を見て、台車をどちらにどれだけ押すかを決める関数)を切り替えて、学習の前と後を見比べてみてください。ドラッグで視点を回せます。</p>
+  </header>
+  <div id="status" class="status">読み込み中…</div>
+  <div class="main" id="app" hidden>
+    <div class="stage"><canvas id="view"></canvas></div>
+    <aside class="panel">
+      <div>
+        <h2>方策を選ぶ</h2>
+        <select id="policy"></select>
+        <div class="note" id="policyNote"></div>
+      </div>
+      <div class="row">
+        <button class="primary" id="play">スタート</button>
+        <button id="reset">最初から</button>
+      </div>
+      <div>
+        <label>速さ <input type="range" id="speed" min="0.5" max="4" step="0.5" value="1"> <span class="mono" id="speedv">1x</span></label>
+      </div>
+      <div>
+        <h2>棒を横から押す(外乱)</h2>
+        <label>強さ <input type="range" id="force" min="10" max="100" step="10" value="20"> <span class="mono" id="forcev">20 N</span></label>
+        <div class="row" style="margin-top:8px">
+          <button id="pushL">← 左へ押す</button>
+          <button id="pushR">右へ押す →</button>
+        </div>
+        <div class="note">学習中は一度も押されていないので、強く押されたときの立ち直り方は身についていません。</div>
+      </div>
+      <div>
+        <h2>いまの様子</h2>
+        <ul class="stats">
+          <li>経過時間<b class="mono" id="time">0.0 秒</b></li>
+          <li>棒の傾き<b class="mono" id="tilt">0.0°</b></li>
+          <li>台車の位置<b class="mono" id="cart">0.00 m</b></li>
+        </ul>
+        <div class="result" id="done"></div>
+      </div>
+      <div>
+        <h2>ここまでの結果(この画面での記録)</h2>
+        <ul class="stats">
+          <li>試した回数<b class="mono" id="tries">0 回</b></li>
+          <li>倒れた回数<b class="mono bad" id="falls">0 回</b></li>
+          <li>最後まで立てた回数<b class="mono ok" id="wins">0 回</b></li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+  <p class="note" id="banner" hidden>この画面ではブラウザの中で学習していません。あらかじめ Node で PPO を回して学習しておいた方策の重みを読み込み、その動きをここで再生しています。</p>
+  <section class="charts" id="charts" hidden>
+    <figure>
+      <canvas id="chartLen"></canvas>
+      <figcaption id="capLen"></figcaption>
+    </figure>
+    <figure>
+      <canvas id="chartFall"></canvas>
+      <figcaption id="capFall"></figcaption>
+    </figure>
+    <p class="note" id="method"></p>
+  </section>
+</div>
+<script type="module" src="view.js"></script>
+</body>
+</html>

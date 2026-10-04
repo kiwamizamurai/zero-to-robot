@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ミニトマト収穫ロボット</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<script type="importmap">
+{ "imports": { "three": "../_web/vendor/three/three.module.js", "three/addons/": "../_web/vendor/three/" } }
+</script>
+<link rel="stylesheet" href="../_web/ui.css">
+<style>
+  .eye { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px; display: grid; gap: 6px; }
+  .eye canvas { width: 100%; height: auto; aspect-ratio: 4 / 3; display: block; border-radius: 8px; background: #000; }
+  .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+  @media (max-width: 860px) { .two { grid-template-columns: minmax(0, 1fr); } }
+  .field { display: grid; gap: 2px; }
+  .field .note { margin: 0; }
+  b.ok { color: var(--ok); }
+  b.bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="../index.html">← サンプルアプリ一覧へ</a>
+    <h1>ミニトマト収穫ロボット</h1>
+    <p>鉢植えのミニトマトから、<b>赤く熟した実だけ</b>を選んで収穫し、かごに入れます。ロボットアームは SO-101(小型の 6 関節アーム)。カメラの画像を色(HSV の色相と彩度)で見分けて、赤い実の位置を求め、斜め上から近づいてつかみ、へたを切って運びます。緑の実は葉と同じ色なので、そもそも候補にしません。右の「しきい値」を動かすと、どこまでを熟した実とみなすかが変わります。ドラッグで視点を回せます。</p>
+  </header>
+  <div id="status" class="status">読み込み中…</div>
+  <div id="app" hidden style="display:grid;gap:18px">
+    <div class="main">
+      <div class="stage"><canvas id="view"></canvas></div>
+      <aside class="panel">
+        <div class="row">
+          <button class="primary" id="play">スタート</button>
+          <button id="reset">最初から</button>
+        </div>
+        <div>
+          <label>速さ <input type="range" id="speed" min="0.5" max="4" step="0.5" value="2"> <span class="mono" id="speedv">2x</span></label>
+        </div>
+        <div>
+          <h2>見分けのしきい値</h2>
+          <div class="field">
+            <label>熟したとみなす赤さ <input type="range" id="thr" min="0" max="100" step="5" value="70"></label>
+            <span class="mono" id="thrv"></span>
+            <span class="note">実の画素のうち「赤」の割合がこれ以上なら収穫します。0% にするとオレンジの実も採ります。</span>
+          </div>
+          <div class="field">
+            <label>彩度の下限 <input type="range" id="sat" min="100" max="230" step="5" value="185"></label>
+            <span class="mono" id="satv"></span>
+            <span class="note">色の鮮やかさ。鉢(素焼きの茶色)は鮮やかでないので、これで外れます。下げすぎると鉢まで拾います。</span>
+          </div>
+          <div class="field">
+            <label>色相の上限 <input type="range" id="hue" min="8" max="40" step="1" value="20"></label>
+            <span class="mono" id="huev"></span>
+            <span class="note">赤〜オレンジの範囲。上げすぎると黄色いアームまで拾います。</span>
+          </div>
+        </div>
+        <div>
+          <h2>いまの動作</h2>
+          <div class="note"><b id="phase">待機</b></div>
+          <div class="note">シミュレーション時間: <span class="mono" id="time">0.0 秒</span></div>
+        </div>
+        <div id="done" class="result"></div>
+      </aside>
+    </div>
+    <div class="two">
+      <section class="eye">
+        <h2 style="margin:0;font-family:var(--font-display);font-size:15px">ロボットの目(カメラ画像と検出結果)</h2>
+        <canvas id="eye" width="480" height="360"></canvas>
+        <div class="note">白い枠が収穫する実、オレンジの枠は「まだ」と判断した実。数字は赤い画素の割合(熟し具合)です。緑の実は枠が付きません(候補にしていない)。1 個とるたびにアームが視界から退いて、撮り直します。</div>
+      </section>
+      <section class="panel">
+        <div>
+          <h2>実の状態</h2>
+          <ul id="fruits" class="stats"></ul>
+        </div>
+        <div>
+          <h2>収穫の記録</h2>
+          <pre id="log" class="log"></pre>
+        </div>
+      </section>
+    </div>
+    <section class="panel">
+      <h2>Python 版との違い</h2>
+      <p class="note">元は <span class="mono">harvest.py</span> と <span class="mono">scene.py</span>(Python、OpenCV)です。実の見分け方・近づき方・つかんで切って運ぶ順番・場面(鉢植え 6 個・かご)は同じです。違いは次のとおりです。</p>
+      <ul class="note">
+        <li>画像処理は OpenCV を使わず、自前の小さな実装です(色の変換、色の範囲での切り出し、小さなノイズを消す処理、つながった領域のラベル付け)。</li>
+        <li>Python 版は距離カメラ(RGB-D の D)で実までの距離を測っていました。ブラウザでは距離の画像が出せないので、「ミニトマトの半径は 13 mm」と分かっていることを使い、画面に映った実の大きさから距離を推定しています。実が葉に隠れて小さく見えると、距離の推定がずれます。</li>
+        <li>カメラの画像は、色をそのまま(影や反射なしで)描いた three.js の画像です。実機のカメラなら、照明で色が変わるので、しきい値の調整が必要になります。</li>
+        <li>逆運動学(手先の位置から関節の角度を求める計算)は、mink ではなく自前の減衰つき最小二乗法です。向きより位置を優先します。</li>
+        <li>かごへ運んで指を開いたあと、実が開いた指の板の上に乗ったままになることがあったので、手首を 90° ひねって落とす動きを足しました(Python 版にはありません)。かごへ運ぶときの手先の位置も、実が手のひら側へずれる分を見込んで調整しています。</li>
+        <li>「へたを切る」は、茎と実をつなぐ拘束を外すことで表しています(元と同じ)。ブラウザ版の MuJoCo は拘束のオン・オフを直接は切り替えられないので、拘束の相手を実自身に付け替えて外しています。</li>
+        <li>葉の配置は乱数の種が同じでも Python 版と同じにはなりません(見た目だけで、衝突はしません)。</li>
+        <li>動画・画像の書き出しはありません。</li>
+      </ul>
+    </section>
+  </div>
+</div>
+<script type="module" src="view.js"></script>
+</body>
+</html>

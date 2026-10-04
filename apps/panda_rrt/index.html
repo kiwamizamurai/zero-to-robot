@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>障害物をよけて腕を動かす(RRT-Connect)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<script type="importmap">
+{ "imports": { "three": "../_web/vendor/three/three.module.js", "three/addons/": "../_web/vendor/three/" } }
+</script>
+<link rel="stylesheet" href="../_web/ui.css">
+<style>
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 18px; height: 4px; border-radius: 2px; display: inline-block; }
+  .phase { font-weight: 700; min-height: 3.4em; }
+  .seedrow { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 14px; }
+  .seedrow input { width: 100%; }
+  .explain { max-width: 80ch; color: var(--muted); font-size: 14px; }
+  .explain b { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="../index.html">← サンプルアプリ一覧へ</a>
+    <h1>障害物をよけて腕を動かす(RRT-Connect)</h1>
+    <p>腕の前に高さ 60 cm の壁があります。青い玉から壁の向こうの緑の玉へ手を移すとき、どう動けばぶつからないかを、ロボット自身に探させます。腕の姿勢(7 つの関節の角度)を「7 次元の空間の 1 点」と見なして、始まりと終わりの両方から木の枝をランダムに伸ばし、つながったら道が見つかったことになります。枝を伸ばすたびに「この姿勢で壁や床にぶつかる?」を物理エンジン MuJoCo に聞いています。ドラッグで視点を回せます。</p>
+  </header>
+  <div id="status" class="status">読み込み中…</div>
+  <div class="main" id="app" hidden>
+    <div class="stage"><canvas id="view"></canvas></div>
+    <aside class="panel">
+      <div class="row">
+        <button class="primary" id="play">スタート</button>
+        <button id="reset">最初から</button>
+      </div>
+      <div>
+        <label>速さ <input type="range" id="speed" min="0.5" max="8" step="0.5" value="2"> <span class="mono" id="speedv">2x</span></label>
+      </div>
+      <div class="seedrow">
+        <label for="seed">乱数の種(seed)</label>
+        <input type="number" id="seed" min="0" max="999999" step="1" value="0">
+        <button id="newseed">変える</button>
+      </div>
+      <div id="phase" class="phase">スタートを押すと、探索が始まります。</div>
+      <div class="legend">
+        <span><i style="background:#1f6fb2"></i>始まりから伸ばす木</span>
+        <span><i style="background:#2f8a4b"></i>終わりから伸ばす木</span>
+        <span><i style="background:#e69f00"></i>見つかった道</span>
+        <span><i style="background:#d62ea8"></i>短くした道</span>
+        <span><i style="background:#d9534f"></i>まっすぐ補間した動き</span>
+        <span><i style="background:#16a3a3"></i>実行した手先の軌跡</span>
+      </div>
+      <div>
+        <h2>結果</h2>
+        <ul id="stats" class="stats"></ul>
+      </div>
+      <div id="done" class="result"></div>
+      <div>
+        <h2>ロボットの記録</h2>
+        <pre id="log" class="log"></pre>
+      </div>
+    </aside>
+  </div>
+  <section class="charts" id="charts" hidden>
+    <figure>
+      <canvas id="chartPath"></canvas>
+      <figcaption>手先の道すじを前から見たところ(横: y、縦: 高さ z、単位 m)。茶色が壁、赤がまっすぐ補間した場合(壁の手前で止まる)、青が RRT で見つけた道。手先は壁の上を越えて向こう側へ回り込みます。</figcaption>
+    </figure>
+    <figure>
+      <canvas id="chartJoint"></canvas>
+      <figcaption>短くした道に沿った 7 つの関節の角度(横: 経由点、縦: ラジアン)。RRT は手先ではなく、この角度の空間で道を探しています。</figcaption>
+    </figure>
+  </section>
+  <p class="explain"><b>元の Python 版との違い:</b> 始まりと終わりの姿勢を出す逆運動学(手先の位置から関節の角度を逆算する計算)は、Python 版は mink、このブラウザ版は減衰つき最小二乗法です。また、枝の途中で当たり判定をする間隔は、Python 版の 0.03 rad ではなく 0.01 rad にしています(0.03 rad だと壁をかすめる道が出ることがあったため)。乱数も別物なので、同じ seed でも Python 版と同じ道にはなりません。</p>
+</div>
+<script type="module" src="view.js"></script>
+</body>
+</html>

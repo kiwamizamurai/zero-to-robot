@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>力を加減してなぞる(Panda × インピーダンス制御)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=M+PLUS+Rounded+1c:wght@500;800&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<script type="importmap">
+{ "imports": { "three": "../_web/vendor/three/three.module.js", "three/addons/": "../_web/vendor/three/" } }
+</script>
+<link rel="stylesheet" href="../_web/ui.css">
+<style>
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .big { font-family: var(--font-mono); font-size: 26px; font-weight: 500; line-height: 1.2; }
+  .big small { font-size: 13px; color: var(--muted); }
+  .cmp { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 860px) { .cmp { grid-template-columns: minmax(0, 1fr); } }
+  .cmp figure, .block { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px; }
+  .cmp canvas { width: 100%; height: auto; display: block; }
+  .cmp figcaption { font-size: 13px; color: var(--muted); }
+  table.res { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.res th, table.res td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: right; }
+  table.res th:first-child, table.res td:first-child, table.res th:nth-child(2), table.res td:nth-child(2) { text-align: left; }
+  .scroll { overflow-x: auto; }
+  #chart { width: 100%; height: auto; display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="../index.html">← サンプルアプリ一覧へ</a>
+    <h1>力を加減してなぞる(Panda × インピーダンス制御)</h1>
+    <p>「関節をこの角度にしろ」という位置の指令は、何かに触れる作業が苦手です。机の高さの見込みが 1 cm ずれるだけで、ペン先が宙に浮くか、机に強く押しつけてしまいます。そこで手先を「ばねとダンパーでつながれた点」のように振る舞わせます(インピーダンス制御)。ペン先で机に円を描き、押す力を比べてみましょう。ドラッグで視点を回せます。</p>
+  </header>
+  <div id="status" class="status">読み込み中…</div>
+  <div class="main" id="app" hidden>
+    <div class="stage"><canvas id="view"></canvas></div>
+    <aside class="panel">
+      <div class="row">
+        <button class="primary" id="play">スタート</button>
+        <button id="reset">最初から</button>
+      </div>
+      <div>
+        <h2>制御のしかた</h2>
+        <div class="seg">
+          <button id="mode-stiff" aria-pressed="false">位置制御に近い<br><span class="note">ばね 8000 N/m</span></button>
+          <button id="mode-soft" aria-pressed="true">インピーダンス制御<br><span class="note">ばね 400 N/m</span></button>
+        </div>
+        <div class="note" id="modenote"></div>
+      </div>
+      <div>
+        <label>机の高さのずれ <input type="range" id="offset" min="-20" max="20" step="1" value="0"> <span class="mono" id="offsetv">0 mm</span></label>
+        <div class="note">マイナスは見込みより低い机、プラスは高い机。ロボットは見込みの高さしか知りません。</div>
+      </div>
+      <div>
+        <label>速さ <input type="range" id="speed" min="0.5" max="4" step="0.5" value="1"> <span class="mono" id="speedv">1x</span></label>
+      </div>
+      <div>
+        <h2>いま机を押している力</h2>
+        <div class="big"><span id="force">0.0</span> <small>N(目標 10 N)</small></div>
+        <div class="note">シミュレーション時間: <span class="mono" id="time">0.0 秒</span></div>
+      </div>
+      <div id="done" class="result"></div>
+    </aside>
+  </div>
+  <section class="block" id="live" hidden>
+    <h2 style="font-family:var(--font-display);font-size:15px;margin:0 0 4px">押す力のリアルタイムグラフ</h2>
+    <canvas id="chart"></canvas>
+    <p class="note" style="margin:4px 0 0">接触力は 1 ステップごとに細かく振動するので、力センサーと同じく 20 ms の平均で表示しています。点線が目標の 10 N。約 3.5 秒で机に触れ、そこから 6 秒かけて円を描きます。</p>
+  </section>
+  <section id="compare" hidden style="display:grid;gap:12px">
+    <div class="block">
+      <h2 style="font-family:var(--font-display);font-size:18px;margin:0 0 4px">6 通りを並べて比べる</h2>
+      <p class="note" style="margin:0 0 8px">硬い制御と柔らかい制御を、机が見込みどおり・1 cm 低い・1 cm 高いの 3 通りずつ(合計 6 回)走らせます。どちらも、机が見込みどおりなら 10 N で押す設定です。</p>
+      <button class="primary" id="compare-run">6 通りを実行して比べる</button>
+      <div id="cmp-wait" class="note"></div>
+    </div>
+    <div id="cmp-out" hidden style="display:grid;gap:12px">
+      <div class="cmp" id="cmp-lines"></div>
+      <div class="cmp" id="cmp-inks"></div>
+      <div class="block scroll"><table class="res" id="cmp-table"></table></div>
+      <p class="note" id="cmp-claim"></p>
+    </div>
+  </section>
+  <p class="note">元の Python 版(<span class="mono">impedance.py</span>)と同じ制御則・同じ数値です。違いは、動画と画像ファイルの代わりに画面上で描き直している点と、机のずれをスライダーで ±20 mm まで動かせる点です。</p>
+</div>
+<script type="module" src="view.js"></script>
+</body>
+</html>

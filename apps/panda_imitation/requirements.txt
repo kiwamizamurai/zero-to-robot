@@ -1,0 +1,4 @@
+-r ../panda_pick_place/requirements.txt
+torch
+opencv-python-headless
+matplotlib

@@ -1,0 +1,7 @@
+mujoco
+mink
+daqp
+robot_descriptions
+imageio[ffmpeg]
+matplotlib
+# 実機で動かすとき: pip install "lerobot[feetech]"

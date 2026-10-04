@@ -1,0 +1,74 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # ブラウザ版のシミュレーションを Node で headless 実行し、各アプリの成功条件を確かめる
+  web-sim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: 各アプリの test_sim.mjs を実行
+        run: |
+          set -e
+          for f in apps/*/test_sim.mjs; do
+            echo "::group::$f"
+            node "$f"
+            echo "::endgroup::"
+          done
+
+  # Pages に載せるサイトが組み立てられて、リンク切れが無いこと
+  site-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/build_site.sh
+
+  # 元の Python 版(リファレンス実装)が今も動くこと。描画は使わず、物理と IK だけを走らせる
+  python-reference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/robot_descriptions
+          key: robot-descriptions-${{ hashFiles('apps/panda_pick_place/requirements.txt') }}
+      - run: pip install -r apps/panda_pick_place/requirements.txt
+      - name: pick_place.py(3 つのブロックが箱に入る)
+        env:
+          MUJOCO_GL: disable # 描画は使わない。EGL の無いランナーでも import できるようにする
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, "apps/panda_pick_place")
+          import pick_place
+          results = pick_place.run(record_video=False)
+          assert all(results.values()), results
+          PY
+
+  # 数式ノート(Typst)がコンパイルできること
+  typst:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: typst-community/setup-typst@v5
+      - name: notes*.typ をコンパイル
+        run: |
+          set -e
+          for f in $(git ls-files '*/notes*.typ'); do
+            echo "::group::$f"
+            typst compile --root . "$f" "$RUNNER_TEMP/notes-check.pdf"
+            echo "::endgroup::"
+          done
